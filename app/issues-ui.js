@@ -32,8 +32,8 @@ export function createIssues(ctx) {
       if (!g?.al) return { error: t('iss.err.noal') };
       const sta = Number(stationText), off = Number(offText || 0);
       if (!Number.isFinite(sta) || !Number.isFinite(off)) return { error: t('iss.err.sta') };
-      const p = I.stationPin(g.al, sta, off, { name: g.name, id: String(g.id), z: ctx.groundAt(v.cx, v.cy) });
-      return p ? { pin: p } : { error: t('iss.err.sta') };
+      const r = I.typedStationPin(g.al, sta, off, { name: g.name, id: String(g.id), z: ctx.groundAt(v.cx, v.cy) });
+      return r.pin ? r : { error: r.gap ? t('cv.sta.gap', { sta: String(stationText).trim() }) : t('iss.err.sta') };
     }
     if (mode === 'object') {
       if (!g?.pts?.length) return { error: t('iss.err.noobj') };

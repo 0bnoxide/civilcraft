@@ -33,7 +33,7 @@ const mod = (f) => import(pathToFileURL(path.join(APP, f)).href);
 const I18N = await mod('i18n.js');
 I18N.init({ strings: JSON.parse(fs.readFileSync(path.join(APP, 'lang/en.json'), 'utf8')) });
 const AL = await mod('alignment.js'), LX = await mod('landxml.js'), PJ = await mod('project.js'), U = await mod('units.js');
-const IM = await mod('ifc-civil-model.js'), IW = await mod('ifc-civil.js'), RD = await mod('ifc-civil-read.js'), ST = await mod('staking.js');
+const IM = await mod('ifc-civil-model.js'), IS = await mod('issues.js'), IW = await mod('ifc-civil.js'), RD = await mod('ifc-civil-read.js'), ST = await mod('staking.js');
 const TOOLS = path.join(REPO, 'tools/civilcraft-test');
 const FIX = path.join(TOOLS, 'staeq');
 const python = fs.existsSync(path.join(TOOLS, 'venv/bin/python')) ? path.join(TOOLS, 'venv/bin/python') : 'python3';
@@ -100,6 +100,11 @@ try {
 
   const rs = AL.buildAlignment({ pis: [{ x: 0, y: 0 }, { x: 1000, y: 0 }], start: 1000, eqs: [{ internal: 1500, ahead: 0 }] });
   ok(rs.display(1750) === 250 && rs.internal(250) === 1750 && rs.internal(1200) === 1200 && rs.internal(900) === 900, 'a station that also lies before the start maps to its occurrence on the alignment');
+
+  const fw = AL.buildAlignment({ pis: [{ x: 0, y: 0 }, { x: 1000, y: 0 }], start: 0, eqs: [{ internal: 500, ahead: 600 }] });
+  const ip = IS.typedStationPin(fw, 700, 0, { name: 'A', id: 'a' });
+  ok(ip.pin?.ref?.sta === 600 && Math.abs(ip.pin.x - 600) < 1e-9 && fw.display(ip.pin.ref.sta) === 700, 'an issue pinned at a typed station lands at that displayed station', ip);
+  ok(IS.typedStationPin(fw, 550, 0).gap === true, 'an issue station in an equation gap is refused');
 
   section('what is not supported says so');
   const bad = xml.replace(/<StaEquation [^>]*\/>/, '<StaEquation staInternal="11000" staBack="11000" staAhead="10900" staIncrement="decreasing"/><StaEquation staInternal="99999" staBack="99999" staAhead="100099"/><StaEquation staInternal="12000" staBack="11990" staAhead="12100"/>');
