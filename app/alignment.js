@@ -300,9 +300,10 @@ export class Alignment {
     if (!Number.isFinite(d)) return null;
     const E = this.eqs;
     if (!E.length) return d;
-    for (let j = 0; j <= E.length; j++) {
+    // on the alignment first (a backward equation can make a station also "exist" before the start or past the end), then off it
+    for (const bounded of [true, false]) for (let j = 0; j <= E.length; j++) {
       const k = last ? E.length - j : j;
-      const from = k ? E[k - 1].internal : -Infinity, to = k < E.length ? E[k].internal : Infinity;
+      const from = k ? E[k - 1].internal : bounded ? this.start : -Infinity, to = k < E.length ? E[k].internal : bounded ? this.end : Infinity;
       const s = k ? d - E[k - 1].ahead + E[k - 1].internal : d;
       if (s >= from - 1e-9 && s <= to + 1e-9) return s;
     }

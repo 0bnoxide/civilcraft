@@ -98,6 +98,9 @@ try {
   ok(bk.display(bk.end) === 200 && bk.internal(200) === 200 && bk.internal(200, true) === 300, 'a backward equation repeats 2+00: a range\'s end takes its later occurrence');
   ok(ST.stakeStations(AL.buildAlignment({ pis: [{ x: 0, y: 0 }, { x: 1000, y: 0 }], start: 0 }), { step: 0.01, keys: false }).length === 100001, 'a staking grid over 20 000 stations is not cut short (the dialog says it is too many)');
 
+  const rs = AL.buildAlignment({ pis: [{ x: 0, y: 0 }, { x: 1000, y: 0 }], start: 1000, eqs: [{ internal: 1500, ahead: 0 }] });
+  ok(rs.display(1750) === 250 && rs.internal(250) === 1750 && rs.internal(1200) === 1200 && rs.internal(900) === 900, 'a station that also lies before the start maps to its occurrence on the alignment');
+
   section('what is not supported says so');
   const bad = xml.replace(/<StaEquation [^>]*\/>/, '<StaEquation staInternal="11000" staBack="11000" staAhead="10900" staIncrement="decreasing"/><StaEquation staInternal="99999" staBack="99999" staAhead="100099"/><StaEquation staInternal="12000" staBack="11990" staAhead="12100"/>');
   const db = LX.readLandXml(bad), ab = db.alignments.find((x) => x.name === E.name);

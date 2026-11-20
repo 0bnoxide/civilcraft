@@ -153,6 +153,7 @@ export function createSections(ctx) {
 
   /** "Sample lines" in the alignment's Properties. */
   function props(a) {
+    const staA = (x) => formatStation(P().alignment(a).display(x), U());   // this alignment's equations, not the viewer's
     const out = [el('h3', { className: 'cv-h3' }, t('sec.props.head'))];
     const p = P(), U0 = unitOf(U());
     if (!a.sampling) {
@@ -173,7 +174,7 @@ export function createSections(ctx) {
         return true;
       }, { id: 'cv-sec-extra', text: true, station: true }), 'cv-sec-extra')));
     if (smp.extra.length) {
-      out.push(el('ul', { className: 'cv-plainlist cv-note' }, ...smp.extra.map((x) => el('li', {}, sta(x), ' ', el('button', { type: 'button', className: 'cv-linkbtn', 'aria-label': t('sec.props.extra.remove', { sta: sta(x) }), onclick: () => p.change(t('sec.undo.extra.remove'), (s) => { const q = s.alignments.find((m) => m.id === a.id).sampling; q.extra = q.extra.filter((y) => y !== x); }) }, t('sec.props.remove'))))));
+      out.push(el('ul', { className: 'cv-plainlist cv-note' }, ...smp.extra.map((x) => el('li', {}, staA(x), ' ', el('button', { type: 'button', className: 'cv-linkbtn', 'aria-label': t('sec.props.extra.remove', { sta: staA(x) }), onclick: () => p.change(t('sec.undo.extra.remove'), (s) => { const q = s.alignments.find((m) => m.id === a.id).sampling; q.extra = q.extra.filter((y) => y !== x); }) }, t('sec.props.remove'))))));
     }
     const ss = p.sections(a);
     if (ss) {
