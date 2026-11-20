@@ -4,7 +4,8 @@
  * station across, elevation up (vertically exaggerated to fill the panel; the exaggeration is shown).
  *
  *   const pv = new ProfileView(canvas)
- *   pv.set({ eg, profile, pvis, start, end, units, sel, hover, features })   then pv.draw()
+ *   pv.set({ eg, profile, pvis, start, end, units, sel, hover, features, disp?, grid? })   then pv.draw()
+ *   disp / grid (Slice 1): the alignment's display(sta) and gridStations(step, from, to), for station equations
  *   pv.toData(sx, sy) → { sta, z }    pv.toScreen(sta, z)    pv.hitPvi(sx, sy) → index | -1
  *   features (0.5 WL.20, featureline.js featureProfile): [{ id, name, crossings [{sta, z}], runs [[{sta, z}]] }] — each
  *   crossing a diamond labelled "<name> <elevation>" (upright text, up from the mark), each run a dashed line named at its
@@ -116,7 +117,7 @@ export class ProfileView {
       ctx.fillText(t('pv.empty'), this.w / 2, this.h / 2);
       return;
     }
-    const P = this.plot, u = d.units;
+    const P = this.plot, u = d.units, D = d.disp || ((s) => s);   // Slice 1: disp = internal → displayed station (station equations)
     // grid: stations and elevations
     const len = this.s1 - this.s0, pxPerSta = (P.x1 - P.x0) / Math.max(len, 1e-9);
     const sStep = niceStep(70 / pxPerSta, u === 'm' ? [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000] : [0.5, 1, 2, 5, 10, 25, 50, 100, 200, 500, 1000, 2000]);
@@ -124,9 +125,10 @@ export class ProfileView {
     ctx.lineWidth = 1; ctx.strokeStyle = C.grid; ctx.fillStyle = C.ink2;
     ctx.beginPath();
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    for (let s = Math.ceil(this.s0 / sStep) * sStep; s <= this.s1 + 1e-9; s += sStep) {
+    const grid = d.grid ? d.grid(sStep, this.s0, this.s1) : (() => { const g = []; for (let s = Math.ceil(this.s0 / sStep) * sStep; s <= this.s1 + 1e-9; s += sStep) g.push({ sta: s, show: s }); return g; })();
+    for (const { sta: s, show } of grid) {
       const x = this.toScreen(s, this.z0).x; ctx.moveTo(x, P.y1); ctx.lineTo(x, P.y0);
-      ctx.fillText(formatStation(s, u, sStep < 1 ? 1 : 0), x, P.y0 + 6);
+      ctx.fillText(formatStation(show, u, sStep < 1 ? 1 : 0), x, P.y0 + 6);
     }
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     for (let z = Math.ceil(this.z0 / zStep) * zStep; z <= this.z1 + 1e-9; z += zStep) {
@@ -195,7 +197,7 @@ export class ProfileView {
         if (hp) {
           const s = this.toScreen(hp.sta, hp.z);
           ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(s.x, s.y, 3.2, 0, Math.PI * 2); ctx.fill();
-          ctx.fillText(t(c.high ? 'pv.high' : 'pv.low', { sta: formatStation(hp.sta, u), z: fixed(hp.z, 2) }), v.x, up ? ly - 14 : ly + 14);
+          ctx.fillText(t(c.high ? 'pv.high' : 'pv.low', { sta: formatStation(D(hp.sta), u), z: fixed(hp.z, 2) }), v.x, up ? ly - 14 : ly + 14);
         }
       }
     }
@@ -206,7 +208,7 @@ export class ProfileView {
       ctx.beginPath(); ctx.arc(s.x, s.y, sel || hov ? 6 : 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       if (sel || pv.length <= 8) {
         ctx.fillStyle = C.ink2; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = '11px ' + LABEL_FONT;
-        ctx.fillText(t('pv.pvi', { sta: formatStation(v.sta, u), z: fixed(v.z, 2) }), s.x, s.y + 9);
+        ctx.fillText(t('pv.pvi', { sta: formatStation(D(v.sta), u), z: fixed(v.z, 2) }), s.x, s.y + 9);
       }
     });
     if (d.cursor) {

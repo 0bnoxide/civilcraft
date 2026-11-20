@@ -33,7 +33,7 @@ export function createSheetsDialog(ctx) {
     const vex = sel('vex', VEXES.map((v) => [String(v), v + '×']), '10');
     const ink = sel('ink', [['color', t('pp.ui.ink.color')], ['mono', t('pp.ui.ink.mono')]], 'color');
     const from = el('input', { type: 'text', className: 'cv-input', id: id + '-from', 'data-pp-from': '', value: formatStation(al.start, U) });
-    const to = el('input', { type: 'text', className: 'cv-input', id: id + '-to', 'data-pp-to': '', value: formatStation(al.end, U) });
+    const to = el('input', { type: 'text', className: 'cv-input', id: id + '-to', 'data-pp-to': '', value: formatStation(al.display(al.end), U) });
     const info = el('p', { className: 'cv-note', 'data-pp-info': '' });
     const go = el('button', { type: 'button', className: 'btn-plot btn-sm-cc', 'data-pp-go': '' }, t('pp.ui.go'));
     const row = (label, input) => [el('label', { for: input.id }, label), input];
@@ -49,7 +49,7 @@ export function createSheetsDialog(ctx) {
         el('div', { className: 'cv-dlg-foot' }, el('button', { type: 'button', className: 'btn-line btn-sm-cc', onclick: () => dlg.close() }, t('pp.ui.cancel')), go)));
     close.onclick = () => dlg.close();
     const range = () => {
-      const f = parseStation(from.value, U), e = parseStation(to.value, U);
+      const f = al.internal(parseStation(from.value, U)), e = al.internal(parseStation(to.value, U), true);   // Slice 1: typed stations are displayed ones
       if (f === null || e === null || !(e > f)) return null;
       return [Math.max(al.start, f), Math.min(al.end, e)];
     };

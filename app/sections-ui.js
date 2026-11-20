@@ -33,7 +33,8 @@ export function createSections(ctx) {
   let want = null, idx = 0, ve = 0, meas = null, measuring = false, hoverSnap = null, pan = null;   // CV.3: meas = { a, b? } in the section's own offset / elevation
   const P = () => ctx.project();
   const U = () => ctx.units();
-  const sta = (s) => formatStation(s, U());
+  const disp = (s) => { const a = alignment(), al = a && P().alignment(a); return al?.ok ? al.display(s) : s; };   // Slice 1: station equations
+  const sta = (s) => formatStation(disp(s), U());
   const areaU = () => unitOf(U()).area;
 
   const alignment = () => { const s = P().state; return s.alignments.find((a) => a.id === want) || s.alignments.find((a) => a.sampling) || s.alignments[0] || null; };
@@ -152,6 +153,7 @@ export function createSections(ctx) {
 
   /** "Sample lines" in the alignment's Properties. */
   function props(a) {
+    const staA = (x) => formatStation(P().alignment(a).display(x), U());   // this alignment's equations, not the viewer's
     const out = [el('h3', { className: 'cv-h3' }, t('sec.props.head'))];
     const p = P(), U0 = unitOf(U());
     if (!a.sampling) {
@@ -166,13 +168,13 @@ export function createSections(ctx) {
       ...ctx.row(t('sec.props.left'), el('div', { className: 'cv-row' }, ctx.numInput(smp.left, set('left'), { id: 'cv-sec-left', min: 0 }), el('span', { className: 'cv-unit' }, U0.short)), 'cv-sec-left'),
       ...ctx.row(t('sec.props.right'), el('div', { className: 'cv-row' }, ctx.numInput(smp.right, set('right'), { id: 'cv-sec-right', min: 0 }), el('span', { className: 'cv-unit' }, U0.short)), 'cv-sec-right'),
       ...ctx.row(t('sec.props.extra'), ctx.numInput('', (v) => {
-        const x = parseStation(v, U());
+        const x0 = parseStation(v, U()), x = x0 === null ? null : P().alignment(a).internal(x0);
         if (x === null) return false;
         p.change(t('sec.undo.extra'), (s) => { const q = s.alignments.find((m) => m.id === a.id).sampling; q.extra = [...new Set([...q.extra, x])].sort((m, n) => m - n); });
         return true;
       }, { id: 'cv-sec-extra', text: true, station: true }), 'cv-sec-extra')));
     if (smp.extra.length) {
-      out.push(el('ul', { className: 'cv-plainlist cv-note' }, ...smp.extra.map((x) => el('li', {}, sta(x), ' ', el('button', { type: 'button', className: 'cv-linkbtn', 'aria-label': t('sec.props.extra.remove', { sta: sta(x) }), onclick: () => p.change(t('sec.undo.extra.remove'), (s) => { const q = s.alignments.find((m) => m.id === a.id).sampling; q.extra = q.extra.filter((y) => y !== x); }) }, t('sec.props.remove'))))));
+      out.push(el('ul', { className: 'cv-plainlist cv-note' }, ...smp.extra.map((x) => el('li', {}, staA(x), ' ', el('button', { type: 'button', className: 'cv-linkbtn', 'aria-label': t('sec.props.extra.remove', { sta: staA(x) }), onclick: () => p.change(t('sec.undo.extra.remove'), (s) => { const q = s.alignments.find((m) => m.id === a.id).sampling; q.extra = q.extra.filter((y) => y !== x); }) }, t('sec.props.remove'))))));
     }
     const ss = p.sections(a);
     if (ss) {
@@ -183,7 +185,7 @@ export function createSections(ctx) {
     out.push(el('div', { className: 'cv-actions' },
       el('button', { type: 'button', className: 'btn-line btn-sm-cc', 'data-sec-open': '', onclick: () => show(true, a.id) }, el('i', { className: 'bi bi-distribute-vertical', 'aria-hidden': 'true' }), ' ', t('sec.props.view')),
       ss?.sections.length ? el('button', { type: 'button', className: 'btn-line btn-sm-cc', 'data-xs-open': '', onclick: () => sheetsDialog(a) }, el('i', { className: 'bi bi-file-earmark-pdf', 'aria-hidden': 'true' }), ' ', t('xs.ui.open')) : null,   // 0.4 V17
-      ss?.sections.length > 1 ? el('button', { type: 'button', className: 'btn-line btn-sm-cc', 'data-mh-open': '', onclick: () => massHaulDialog({ root: ctx.root, el, units: () => U(), download: ctx.download, fileStem: ctx.fileStem, say: ctx.say }, a, setOf(a)) }, el('i', { className: 'bi bi-graph-up-arrow', 'aria-hidden': 'true' }), ' ', t('mh.open')) : null,   // 0.4 V24
+      ss?.sections.length > 1 ? el('button', { type: 'button', className: 'btn-line btn-sm-cc', 'data-mh-open': '', onclick: () => massHaulDialog({ root: ctx.root, el, units: () => U(), download: ctx.download, fileStem: ctx.fileStem, say: ctx.say, al: P().alignment(a) }, a, setOf(a)) }, el('i', { className: 'bi bi-graph-up-arrow', 'aria-hidden': 'true' }), ' ', t('mh.open')) : null,   // 0.4 V24
       el('button', { type: 'button', className: 'btn-line btn-sm-cc', onclick: () => p.change(t('sec.undo.remove'), (s) => { s.alignments.find((q) => q.id === a.id).sampling = null; }) }, t('sec.props.remove.all'))));
     return out;
   }
@@ -209,7 +211,7 @@ export function createSections(ctx) {
           el('div', { className: 'cv-props' }, ...row(t('pp.ui.paper'), paper), ...row(t('pp.ui.scale'), scale), ...row(t('pp.ui.vex'), vex)), info),
         el('div', { className: 'cv-dlg-foot' }, el('button', { type: 'button', className: 'btn-line btn-sm-cc', onclick: () => dlg.close() }, t('pp.ui.cancel')), go)));
     close.onclick = () => dlg.close();
-    const build = () => sectionSheets(set, { paper: paper.value, scale: scales.find((x) => x.label === scale.value), vex: Number(vex.value), units: U0, title: P().state.name, name: a.name });
+    const build = () => sectionSheets(set, { paper: paper.value, scale: scales.find((x) => x.label === scale.value), vex: Number(vex.value), units: U0, title: P().state.name, name: a.name, disp: (s) => P().alignment(a).display(s) });   // this alignment's equations, not the viewer's
     const update = () => { const r = build(); info.textContent = [t('xs.ui.info', { n: r.sheets.length, sections: set.sections.length, per: r.perPage }), ...r.notes].join(' '); };
     for (const x of [paper, scale, vex]) x.addEventListener('change', update);
     go.onclick = async () => {

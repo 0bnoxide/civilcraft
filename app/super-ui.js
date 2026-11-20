@@ -42,7 +42,7 @@ export function superProps(ctx, a, item) {
   const plan = item?.super || null;
   if (plan?.problems?.length) out.push(el('div', { className: 'cv-report is-error' }, el('ul', {}, ...plan.problems.map((m) => el('li', {}, m)))));
   if (plan?.curves?.length) {
-    const st = (v) => formatStation(v, U);
+    const st = (v) => formatStation(P.alignment(a).display(v), U);   // Slice 1: station equations
     out.push(el('div', { className: 'cv-table-wrap' }, el('table', { className: 'cv-table', 'data-se-curves': '' },
       el('thead', {}, el('tr', {}, ...['#', t('se.c.r'), 'e', t('se.c.lr'), t('se.c.lt'), t('se.c.full')].map((h) => el('th', { scope: 'col' }, h)))),
       el('tbody', {}, ...plan.curves.map((c) => el('tr', {}, el('td', {}, String(c.i)), el('td', { className: 'num' }, fixed(c.R, 0)), el('td', { className: 'num' }, fixed(c.e * 100, 1) + '%'),
@@ -50,14 +50,14 @@ export function superProps(ctx, a, item) {
     const cv = el('canvas', { className: 'cv-se-diagram', 'data-se-diagram': '', width: 600, height: 200, role: 'img', 'aria-label': t('se.diagram.label') });
     out.push(el('h3', { className: 'cv-h3' }, t('se.diagram')), cv);
     const al = P.alignment(a), nc = ncOf(a.corridor);
-    requestAnimationFrame(() => drawDiagram(cv, plan, { start: al.start, end: al.end, nc, units: U }));
+    requestAnimationFrame(() => drawDiagram(cv, plan, { start: al.start, end: al.end, nc, units: U, disp: (s) => al.display(s) }));
   } else out.push(el('p', { className: 'cv-note' }, t('se.none')));
   return out;
 }
 
 /** The superelevation diagram: station across, lane cross slope up (positive = falls away from the crown is drawn DOWN,
  *  as on a typical diagram the low side is below the centre line): left lane solid, right lane dashed, key stations ticked. */
-export function drawDiagram(cv, plan, { start, end, nc, units = 'ft', colors = null } = {}) {
+export function drawDiagram(cv, plan, { start, end, nc, units = 'ft', colors = null, disp = (s) => s } = {}) {
   const dpr = globalThis.devicePixelRatio || 1, w = cv.clientWidth || 600, h = cv.clientHeight || 200;
   cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
   const ctx = cv.getContext('2d');
@@ -74,5 +74,5 @@ export function drawDiagram(cv, plan, { start, end, nc, units = 'ft', colors = n
   line('L', []); line('R', [6, 4]);
   ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = C.ink;
   for (const c of plan.curves) for (const k of ['lc0', 'fs0', 'fs1', 'lc1']) { const x = X(c.stations[k]); ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, h - pad.b); ctx.lineTo(x, h - pad.b + 4); ctx.stroke(); }
-  ctx.textAlign = 'left'; ctx.fillText(formatStation(start, units, 0), pad.l, h - pad.b + 6); ctx.textAlign = 'right'; ctx.fillText(formatStation(end, units, 0), w - pad.r, h - pad.b + 6);
+  ctx.textAlign = 'left'; ctx.fillText(formatStation(start, units, 0), pad.l, h - pad.b + 6); ctx.textAlign = 'right'; ctx.fillText(formatStation(disp(end), units, 0), w - pad.r, h - pad.b + 6);
 }

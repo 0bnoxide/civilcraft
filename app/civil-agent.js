@@ -240,7 +240,7 @@ function moreTools(app, P, findAl) {
         rows = rows.slice(0, 2000);
         return { alignment: ref.name, start: r6(al.start), end: r6(al.end), units: p.state.units, truncated, rows: rows.map((q) => {
           const pt = al.pointAt(q.sta);
-          return { station: r6(q.sta), stationText: formatStation(q.sta, p.state.units), ground: r6(q.z), ...(prof && prof.ok !== false ? { design: r6(prof.elevationAt(q.sta)) } : {}), ...(g && g !== eg ? { graded: r6(g.elevationAt(pt.x, pt.y)) } : {}) };
+          return { station: r6(q.sta), stationText: formatStation(al.display(q.sta), p.state.units), ground: r6(q.z), ...(prof && prof.ok !== false ? { design: r6(prof.elevationAt(q.sta)) } : {}), ...(g && g !== eg ? { graded: r6(g.elevationAt(pt.x, pt.y)) } : {}) };
         }) };
       },
     },

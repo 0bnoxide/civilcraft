@@ -79,7 +79,7 @@ export function mountFiles(ctx) {
     for (const a of d.alignments) {
       const prof = a.profiles[0];
       p.state.alignments.push({ id: p.nextId('a'), name: a.name.slice(0, 120), start: a.start, pis: a.pis, pvis: prof ? prof.pvis : [],
-        ...(a.cant ? { rail: cleanRail({ ...railDefaults(p.state.units), on: true, pivot: a.cant.pivot, ...(a.cant.gauge ? { gauge: a.cant.gauge } : {}) }, p.state.units), ...(a.cant.speed ? { design: { speed: a.cant.speed, unit: a.cant.speedUnit } } : {}) } : {}) });   // CV.1 2026-11-12: a <Cant> makes it a railway
+        ...(a.cant ? { rail: cleanRail({ ...railDefaults(p.state.units), on: true, pivot: a.cant.pivot, ...(a.cant.gauge ? { gauge: a.cant.gauge } : {}) }, p.state.units), ...(a.cant.speed ? { design: { speed: a.cant.speed, unit: a.cant.speedUnit } } : {}) } : {}), ...(a.eqs?.length ? { eqs: a.eqs } : {}) });   // CV.1 2026-11-12: a <Cant> makes it a railway
       if (a.profiles.length > 1) notes.push(t('cv.lx.profiles.more', { name: a.name }));
     }
     const n0 = d.networks?.find((x) => x.type !== 'water'), nw0 = d.networks?.find((x) => x.type === 'water');   // 0.8 LC.16 rest: a water network opens as water mains
