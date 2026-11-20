@@ -19,6 +19,8 @@ for (const [name, key, aci] of I.LAYER_DEFS) if (!LAYERS.some((l) => l.name === 
 export function createIssues(ctx) {
   const { el } = ctx;
   const P = () => ctx.project(), U = () => (ctx.units() === 'm' ? 'm' : 'ft');
+  // Slice 1: a station pin's station as displayed on its alignment (station equations)
+  const pinSta = (ref) => { const a = (P().state.alignments || []).find((x) => String(x.id) === String(ref.alignment) || x.name === ref.alignment), al = a && P().alignment(a); return al?.ok ? al.display(ref.sta) : ref.sta; };
   const list = () => P().state.issues || [];
   const edit = (label, fn) => P().change(label, (s) => { s.issues ||= []; fn(s.issues, s); if (!s.issues.length) delete s.issues; });
   let dlg = null, pickedId = null;
@@ -59,7 +61,7 @@ export function createIssues(ctx) {
     const rows = L.map((r, i) => {
       const sel = el('select', { className: 'cv-select', 'aria-label': t('iss.status'), onchange: () => { edit(t('iss.undo.status'), (A) => { I.setStatus(A.find((x) => x.id === r.id), sel.value); }); render(); ctx.refresh(); } },
         ...I.STATES.map((s) => el('option', { value: s, selected: s === r.status }, t('iss.s.' + s))));
-      const where = r.pin ? t('iss.pin.' + r.pin.kind) + (r.pin.kind === 'station' && r.pin.ref ? ' ' + formatStation(r.pin.ref.sta, U()) : '') : '—';
+      const where = r.pin ? t('iss.pin.' + r.pin.kind) + (r.pin.kind === 'station' && r.pin.ref ? ' ' + formatStation(pinSta(r.pin.ref), U()) : '') : '—';
       return el('tr', { 'data-iss-row': r.id, className: r.id === pickedId ? 'is-sel' : '' },
         el('td', {}, String(i + 1)), el('td', {}, el('button', { type: 'button', className: 'cv-linkbtn', onclick: () => { pickedId = r.id; zoom(r); render(); } }, r.title)),
         el('td', {}, sel), el('td', {}, where), el('td', { className: 'num' }, String(r.comments.length)),

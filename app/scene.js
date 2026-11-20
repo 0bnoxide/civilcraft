@@ -122,7 +122,7 @@ export function planScene(state, { mmPerUnit = 1, show = {} } = {}) {
     const major = 100, minor = u === 'm' ? 20 : 50;
     const tick = 1.5 * unitPerMm;
     for (const t of al.ticks(minor)) {
-      const isMaj = Math.abs(t.sta / major - Math.round(t.sta / major)) < 1e-9;
+      const isMaj = Math.abs(t.show / major - Math.round(t.show / major)) < 1e-9;
       const nx = Math.sin(t.dir), ny = -Math.cos(t.dir);   // to the right
       const k = isMaj ? tick * 1.6 : tick;
       items.push({ layer: 'C-ROAD-STAN', kind: 'poly', pts: [{ x: t.x - nx * k, y: t.y - ny * k }, { x: t.x + nx * k, y: t.y + ny * k }] });
@@ -131,7 +131,7 @@ export function planScene(state, { mmPerUnit = 1, show = {} } = {}) {
         const off = -(k + 0.8 * unitPerMm);
         let align = 'right';
         if (Math.cos(rot) < -1e-9 || (Math.abs(Math.cos(rot)) <= 1e-9 && Math.sin(rot) < 0)) { rot += Math.PI; align = 'left'; }
-        items.push({ layer: 'C-ROAD-STAN', kind: 'text', x: t.x + nx * off, y: t.y + ny * off, rot, mm: 1.8, align, middle: true, text: formatStation(t.sta, u, 0) });
+        items.push({ layer: 'C-ROAD-STAN', kind: 'text', x: t.x + nx * off, y: t.y + ny * off, rot, mm: 1.8, align, middle: true, text: formatStation(t.show, u, 0) });
       }
     }
     for (const k of al.keyStations()) {
@@ -142,8 +142,16 @@ export function planScene(state, { mmPerUnit = 1, show = {} } = {}) {
       // along the tick, outward to the right, kept upright
       let rot = pt0.dir - Math.PI / 2, align = 'left';
       if (Math.cos(rot) < -1e-9) { rot += Math.PI; align = 'right'; }
-      items.push({ layer: 'C-ROAD-STAN', kind: 'text', x: p.x + nx * (kk + 0.8 * unitPerMm), y: p.y + ny * (kk + 0.8 * unitPerMm), rot, mm: 1.6, align, middle: true, text: t('scene.sta.' + k.kind.toLowerCase(), { sta: formatStation(sta, u) }) });
+      items.push({ layer: 'C-ROAD-STAN', kind: 'text', x: p.x + nx * (kk + 0.8 * unitPerMm), y: p.y + ny * (kk + 0.8 * unitPerMm), rot, mm: 1.6, align, middle: true, text: t('scene.sta.' + k.kind.toLowerCase(), { sta: formatStation(al.display(sta), u) }) });
     }
+    // Slice 1: each station equation, labelled back = ahead
+    al.eqs.forEach((q, i) => {
+      const pt0 = al.pointAt(q.internal), nx = Math.sin(pt0.dir), ny = -Math.cos(pt0.dir), kk = 4 * unitPerMm;
+      items.push({ layer: 'C-ROAD-STAN', kind: 'poly', pts: [{ x: pt0.x - nx * kk, y: pt0.y - ny * kk }, { x: pt0.x + nx * kk, y: pt0.y + ny * kk }] });
+      let rot = pt0.dir - Math.PI / 2, align = 'left';
+      if (Math.cos(rot) < -1e-9) { rot += Math.PI; align = 'right'; }
+      items.push({ layer: 'C-ROAD-STAN', kind: 'text', x: pt0.x + nx * (kk + 0.8 * unitPerMm), y: pt0.y + ny * (kk + 0.8 * unitPerMm), rot, mm: 1.6, align, middle: true, text: t('scene.sta.eq', { back: formatStation(al.eqBack(i), u), ahead: formatStation(q.ahead, u) }) });
+    });
     const p0 = al.pointAt(al.start);
     items.push({ layer: 'C-ROAD-CNTR', kind: 'text', x: p0.x - Math.cos(p0.dir) * 3 * unitPerMm, y: p0.y - Math.sin(p0.dir) * 3 * unitPerMm, rot: 0, mm: 2.2, align: 'right', middle: true, text: a.name || t('scene.al.default') });
   }

@@ -10,7 +10,17 @@
  *   a.pointAt(sta) → { x, y, dir } (dir = forward direction, radians)
  *   a.stationOffset(x, y) → { sta, off (right of the alignment = +), x, y, outside } | null
  *   a.polyline(maxSeg) → [{x, y, sta}] (arcs as chords no longer than maxSeg, and within 0.5° of turn)
- *   a.ticks(step) → [{ sta, x, y, dir }] at every whole multiple of step
+ *   a.ticks(step) → [{ sta, show, x, y, dir }] at every whole multiple of step of the displayed station (show)
+ *   a.gridStations(step, from?, to?) → [{ sta, show }] the same stations without the points (profile and sheet grids)
+ *
+ * Station equations (Slice 1, 2026-11-20): buildAlignment({ pis, start, eqs }) with eqs = [{ internal, ahead, back?, desc? }]
+ * (cleanEquations). Every station the app stores and computes with stays INTERNAL (start + distance along the alignment);
+ * only what is shown and typed goes through the equations:
+ *   a.display(sta)  internal → the station people read (back stations before the first equation, each equation's ahead
+ *                   station plus the distance past it after)
+ *   a.internal(d)   a typed / read station → internal; null in the gap a forward equation skips; where a backward equation
+ *                   makes stations repeat, the first (back) occurrence
+ *   a.eqs           the equations inside the alignment, sorted (one outside it is kept on the record but not applied here)
  *
  * Without a spiral the curve facts follow the usual arc-definition formulas: T = R·tan(Δ/2), L = R·Δ, E = R(sec(Δ/2) − 1),
  * M = R(1 − cos(Δ/2)), chord = 2R·sin(Δ/2). With spirals (Ls, R, θs = Ls / 2R): Xc = Ls(1 − θs²/10 + θs⁴/216 − …),
@@ -102,7 +112,30 @@ export function transitionAt(kind, l, R, Ls) {
 }
 const finPos = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
 
-export function buildAlignment({ pis, start = 0 }) {
+/**
+ * Station equations from a project file or LandXML (untrusted) → [{ internal, ahead, back?, desc? }] sorted by internal station,
+ * at most 100, two at the same internal station kept once. internal and ahead are required; back (the station people read on
+ * the back side) is kept only to write it again.
+ */
+export function cleanEquations(list) {
+  if (!Array.isArray(list)) return [];
+  const fin = (v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e9;
+  const out = [];
+  for (const q of list.slice(0, 100)) {
+    if (!q || !fin(q.internal) || !fin(q.ahead)) continue;
+    if (out.some((x) => Math.abs(x.internal - q.internal) < 1e-6)) continue;
+    out.push({ internal: q.internal, ahead: q.ahead, ...(fin(q.back) ? { back: q.back } : {}), ...(typeof q.desc === 'string' && q.desc ? { desc: q.desc.slice(0, 120) } : {}) });
+  }
+  return out.sort((a, b) => a.internal - b.internal);
+}
+
+export function buildAlignment({ pis, start = 0, eqs = null }) {
+  const al = buildGeometry({ pis, start });
+  al.eqs = cleanEquations(eqs).filter((q) => q.internal > al.start + 1e-9 && q.internal < al.end - 1e-9);
+  return al;
+}
+
+function buildGeometry({ pis, start = 0 }) {
   const errors = [], elements = [];
   const P = (pis || []).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   // drop repeated PIs
@@ -244,8 +277,36 @@ export class Alignment {
     this.elements = elements; this.start = start; this.errors = errors; this.pis = pis; this.curves = [];
     this.length = elements.reduce((s, e) => s + e.len, 0);
     this.end = start + this.length;
+    this.eqs = [];
   }
   get ok() { return this.elements.length > 0 && !this.errors.length; }
+
+  /** Internal station → the displayed station (through the station equations; the same number without any). */
+  display(sta) {
+    if (!Number.isFinite(sta)) return sta;
+    let d = sta;
+    for (const q of this.eqs) if (sta >= q.internal - 1e-9) d = sta - q.internal + q.ahead; else break;
+    return d;
+  }
+
+  /** The back station of equation i (what the stationing before it reaches there): its own `back` is not trusted for this. */
+  eqBack(i) {
+    const q = this.eqs[i];
+    return q ? (i ? q.internal - this.eqs[i - 1].internal + this.eqs[i - 1].ahead : q.internal) : null;
+  }
+
+  /** A displayed station → internal, or null where no point has it (the gap of a forward equation). */
+  internal(d) {
+    if (!Number.isFinite(d)) return null;
+    const E = this.eqs;
+    if (!E.length) return d;
+    for (let k = 0; k <= E.length; k++) {
+      const from = k ? E[k - 1].internal : -Infinity, to = k < E.length ? E[k].internal : Infinity;
+      const s = k ? d - E[k - 1].ahead + E[k - 1].internal : d;
+      if (s >= from - 1e-9 && s <= to + 1e-9) return s;
+    }
+    return null;
+  }
 
   elementAt(sta) {
     const els = this.elements;
@@ -311,11 +372,23 @@ export class Alignment {
   }
 
   ticks(step) {
-    if (!(step > 0) || !this.elements.length) return [];
-    const out = [];
-    const k0 = Math.ceil(this.start / step - 1e-9), k1 = Math.floor(this.end / step + 1e-9);
-    if (k1 - k0 > 20000) return [];
-    for (let k = k0; k <= k1; k++) { const sta = k * step; const p = this.pointAt(sta); out.push({ sta, ...p }); }
+    if (!this.elements.length) return [];
+    return this.gridStations(step).map(({ sta, show }) => ({ sta, show, ...this.pointAt(sta) }));
+  }
+
+  /** Slice 1: internal stations from…to (default the whole alignment) where the displayed station is a whole multiple of step,
+   *  piece by piece between station equations → [{ sta, show }] (at most 20 000, else []). */
+  gridStations(step, from = this.start, to = this.end) {
+    if (!(step > 0) || !Number.isFinite(from) || !Number.isFinite(to) || to < from) return [];
+    const out = [], cuts = [this.start, ...this.eqs.map((q) => q.internal), this.end];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const last = i === cuts.length - 2, a = i ? cuts[i] : Math.min(cuts[i], from), b = last ? Math.max(cuts[i + 1], to) : cuts[i + 1];
+      const lo = Math.max(a, from), hi = Math.min(b, to);
+      if (hi < lo) continue;
+      const off = this.display(a) - a, k0 = Math.ceil((lo + off) / step - 1e-9), k1 = Math.floor((hi + off) / step + (last || hi < b ? 1e-9 : -1e-9));
+      if (k1 - k0 + out.length > 20000) return [];
+      for (let k = k0; k <= k1; k++) out.push({ sta: k * step - off, show: k * step });
+    }
     return out;
   }
 

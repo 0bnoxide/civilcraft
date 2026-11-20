@@ -27,6 +27,7 @@
  *           'eg' lines are breaklines of the existing ground, closed 'design' lines grading items after the corridors) }
  *   0.7.1 71.26: an alignment may carry rail: rail.js cleanRail (a track: cant per PI `pis[i].cant` mm, transition `pis[i].tr`);
  *   p.railPlan(a) (cantPlan), p.railWarnings(); its corridor is then built as a track (corridor.js asm.rail via railAsm).
+ *   alignments may carry eqs: [{ internal, ahead, back?, desc? }] (station equations; every stored station stays internal: alignment.js)
  *   alignments also carry corridor: null | { on, lane, laneSlope, shoulder, shoulderSlope, cut, fill, step, super?, targets? (0.6
  *   WL.25: corridor.js cleanTargets; corridorOrder() grades a corridor after the ones it targets) } (corridor.js;
  *   super: superelev.js, 0.4 V18)
@@ -49,8 +50,7 @@ import { cleanBlk } from './block-points.js';
 import { buildSurface, surfaceFromFaces } from './tin.js';
 import { gridSurface, METHODS as GRID_METHODS } from './gridding.js';   // 0.9 D9.6: choose the contouring method
 import { smoothContours, LEVELS as SMOOTH_LEVELS } from './contour-smooth.js';   // 0.9.1: contour smoothing (display.smooth 'light' | 'strong'; absent = none)
-import { buildGround } from './ground-surface.js';   // 0.8 SU.911: contour terrain (flat triangles fixed when surface.flatFix > 0)
-import { buildAlignment, TRANSITIONS } from './alignment.js';
+import { buildAlignment, TRANSITIONS, cleanEquations } from './alignment.js';
 import { buildProfile, sampleSurface } from './profile.js';
 import { gradedSurface, gridVolume } from './grading.js';
 import { analyzeNetwork } from './pipes.js';
@@ -375,7 +375,7 @@ export class Project {
     const d = this.state.display;
     return (surface && smoothContours(surface, Number(d.interval) || 1, { level: d.smooth })) || [];
   }
-  alignment(a) { return this.memo('al:' + a.id, JSON.stringify([a.pis, a.start]), () => buildAlignment({ pis: a.pis, start: Number(a.start) || 0 })); }
+  alignment(a) { return this.memo('al:' + a.id, JSON.stringify([a.pis, a.start, a.eqs]), () => buildAlignment({ pis: a.pis, start: Number(a.start) || 0, eqs: a.eqs })); }   // eqs: station equations (Slice 1)
   egProfile(a) {
     const al = this.alignment(a), sf = this.eg().surface;
     return this.memo('eg:' + a.id, this.surfaceDeps() + JSON.stringify([a.pis, a.start]), () => sampleSurface(sf, al));
@@ -844,7 +844,8 @@ export class Project {
       const minR = fin(a.minR) && a.minR > 0 && a.minR < 1e7 ? a.minR : 0;   // 0.5 WL.23: design minimum radius (0 = none)
       const design = cleanDesign(a.design);   // 0.7.1 71.24: design speed and class (older files: none)
       const rail = cleanRail(a.rail, s.units);   // 0.7.1 71.26: a track (older files: none)
-      return { id: id(a.id, 'a'), name: str(a.name, 120) || t('scene.al.default'), start: fin(a.start) ? a.start : 0, pis, pvis, corridor, sampling: cleanSampling(a.sampling, s.units), ...(more.length ? { corridors: more } : {}), ...(minR ? { minR } : {}), ...(design ? { design } : {}), ...(rail ? { rail } : {}) };
+      const eqs = cleanEquations(a.eqs);   // Slice 1: station equations (older files: none)
+      return { id: id(a.id, 'a'), name: str(a.name, 120) || t('scene.al.default'), start: fin(a.start) ? a.start : 0, pis, pvis, corridor, sampling: cleanSampling(a.sampling, s.units), ...(more.length ? { corridors: more } : {}), ...(minR ? { minR } : {}), ...(design ? { design } : {}), ...(rail ? { rail } : {}), ...(eqs.length ? { eqs } : {}) };
     }, 1000);
     s.pads = list(obj.pads, (d) => {
       const q = list(d?.pts, xy, 1e4);

@@ -18,7 +18,9 @@
  *     coordinateSystem  null | { name, epsgCode (number | null), ogcWktCode (text | null), desc } (GIS: offered as the
  *                       project's system when opened)
  *     surfaces    [{ name, desc, pts:[{x,y,z}|null], faces:[[i,j,k]], breaklines:[{name,pts}], boundary:[{x,y}]|null }]
- *     alignments  [{ name, start, pis:[{x,y,r,ls1?,ls2?}], profiles:[{name, pvis:[{sta,z,L}]}], surfProfiles:[{name, pts}] }]
+ *     alignments  [{ name, start, pis:[{x,y,r,ls1?,ls2?}], profiles:[{name, pvis:[{sta,z,L}]}], surfProfiles:[{name, pts}], eqs? }]
+ *                 eqs: <StaEquation> [{ internal, ahead, back?, desc? }] (written back from the Alignment's eqs); every other
+ *                 station in the file is internal
  *     features    [{ name, pts:[{x,y,z,b?}], closed, use|null }] (0.6 WL.24) from PlanFeatures (Line, Curve, IrregularLine
  *                 PntList3D; Start/Center/End, rot); use from our Feature/Property, else null (the app decides)
  *   scaleImport(data, k)   multiplies every length/elevation/station (unit conversion)
@@ -30,7 +32,7 @@
 
 import { t } from "./i18n.js";
 import { parseXml, kids, kid, textOf, esc } from './xml.js';
-import { METRES_PER } from './units.js';
+import { METRES_PER, formatStation } from './units.js';
 import { groupKey } from './points.js';
 import { cubicParamFor, buildAlignment } from './alignment.js';   // 0.7.1 71.26: rail transitions in and out; CV.1: the curves' stations for a Cant read back
 
@@ -128,6 +130,8 @@ export function writeLandXml({ name = 'CivilCraft project', units = 'ft', points
         }
       }
       L.push('      </CoordGeom>');
+      // Slice 1: station equations (internal = the station along the alignment where it applies; back as the stationing before reaches it)
+      (al.eqs || []).forEach((q, i) => L.push(`      <StaEquation staInternal="${num(q.internal)}" staBack="${num(al.eqBack(i))}" staAhead="${num(q.ahead)}" staIncrement="increasing"${q.desc ? ` desc="${esc(q.desc)}"` : ''}/>`));
       if (a.cant?.plan) { const cx = cantXml({ name: a.name, plan: a.cant.plan, rail: a.cant.rail, units, speed: a.cant.speed, alignment: al }); if (cx) L.push(cx); }   // CV.1 2026-11-12: a railway's cant (the schema's place: after CoordGeom)
       const eg = a.eg, fg = a.profile;
       if ((eg && eg.pts?.length) || fg?.profile?.pvis?.length) {
@@ -355,6 +359,27 @@ export function readLandXml(text) {
     if (!pis || pis.length < 2) { note(t('lx.al.unread', { name })); continue; }
     const start = Number(a.attrs.staStart) || 0;
     const rec = { name, start, pis, profiles: [], surfProfiles: [] };
+    // Slice 1: <StaEquation> → rec.eqs [{ internal, ahead, back, desc }]. Every other station in the file (elements, profiles)
+    // is read as an internal station, as before; the equations only change the stations people read and type.
+    const eqEls = kids(a, 'StaEquation');
+    if (eqEls.length) {
+      const geo = buildAlignment({ pis, start }), f = (v) => (v === undefined || v === '' ? NaN : Number(v)), eqs = [], fs = (v) => formatStation(v, out.units || 'ft');
+      for (const q of eqEls) {
+        const ahead = f(q.attrs.staAhead), back = f(q.attrs.staBack);
+        let internal = f(q.attrs.staInternal);
+        if (!Number.isFinite(internal) && Number.isFinite(back)) {   // no staInternal: the back station through the equations before it
+          const tmp = buildAlignment({ pis, start, eqs }); internal = tmp.internal(back) ?? NaN;
+        }
+        const at = Number.isFinite(internal) ? fs(internal) : String(q.attrs.staInternal ?? q.attrs.staBack ?? '?').slice(0, 40);
+        if (!Number.isFinite(internal) || !Number.isFinite(ahead)) { note(t('lx.eq.bad', { name, sta: at })); continue; }
+        if (String(q.attrs.staIncrement || 'increasing').toLowerCase() === 'decreasing') { note(t('lx.eq.decreasing', { name, sta: at })); continue; }
+        if (!(internal > geo.start + 1e-9 && internal < geo.end - 1e-9)) { note(t('lx.eq.outside', { name, sta: at })); continue; }
+        eqs.push({ internal, ahead, ...(Number.isFinite(back) ? { back } : {}), ...(q.attrs.desc ? { desc: String(q.attrs.desc).slice(0, 120) } : {}) });
+      }
+      const built = buildAlignment({ pis, start, eqs });
+      built.eqs.forEach((q, i) => { if (Number.isFinite(q.back) && Math.abs(q.back - built.eqBack(i)) > 1e-3) note(t('lx.eq.back', { name, sta: fs(q.internal), back: fs(q.back), calc: fs(built.eqBack(i)) })); });
+      if (built.eqs.length) { rec.eqs = built.eqs; note(t('lx.eq.read', { name, n: built.eqs.length })); }
+    }
     // CV.1 2026-11-12: a railway's <Cant>: the gauge (→ mm), the pivot, the speed, and each curve's applied cant (the largest CantStation on it) on its PI
     const cantEl = kid(a, 'Cant');
     if (cantEl) {

@@ -261,11 +261,11 @@ export function buildSite3D(input, opts = {}) {
       for (const t of al.ticks(minor)) {
         const z = zAt(t.sta, t.x, t.y);
         if (z === null) continue;
-        const isMaj = Math.abs(t.sta / major - Math.round(t.sta / major)) < 1e-9;
+        const isMaj = Math.abs(t.show / major - Math.round(t.show / major)) < 1e-9;
         const k = (units === 'm' ? 1.5 : 5) * (isMaj ? 1.6 : 1);
         const nx = Math.sin(t.dir), ny = -Math.cos(t.dir);
         tick.push(...L(t.x - nx * k, t.y - ny * k, z), ...L(t.x + nx * k, t.y + ny * k, z));
-        if (isMaj) label('station', formatStation(t.sta, units, 0), t.x, t.y, z, C.alignment);
+        if (isMaj) label('station', formatStation(t.show, units, 0), t.x, t.y, z, C.alignment);
       }
     }
     if (o.seg.length) scene.lines.push(o.done({ key: 'alignments', name: t('s3.alignments'), color: C.alignment }));

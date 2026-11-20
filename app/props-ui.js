@@ -92,6 +92,15 @@ export function mountProps(ctx) {
       el('p', { className: 'cv-note cv-span', 'data-al-speed-note': '' }, t('al.speed.note'))];
   }
 
+  // Slice 1: a typed station is a displayed one (past any station equation) → the internal station, or null (and said) in a gap an equation skips
+  function staIn(al, x) {
+    const d = parseStation(x, units());
+    if (d === null) return null;
+    const s = al.internal(d);
+    if (s === null) say(t('cv.sta.gap', { sta: String(x).trim() }));
+    return s;
+  }
+
   function alignmentProps(a) {
     ui.propsH.textContent = t('sec.alignment');
     const al = ctx.project.alignment(a), U = u(), out = [];
@@ -103,7 +112,7 @@ export function mountProps(ctx) {
       const C = t('sec.alignment');
       const rows = [gridRow('name', C, t('fl.props.name'), a.name, { maxLength: 120 }), gridRow('start', C, t('cv.al.start'), formatStation(Number(a.start) || 0, units())),
         gridRow('minR', C, t('why.minr') + ' (' + U.short + ')', a.minR > 0 ? String(a.minR) : '', { hint: t('why.minr.none') })];
-      if (al.ok) rows.push(roRow('length', C, t('fl.props.length'), fixed(al.length, 2) + ' ' + U.short), roRow('end', C, t('cv.al.end'), formatStation(al.end, units())));
+      if (al.ok) rows.push(roRow('length', C, t('fl.props.length'), fixed(al.length, 2) + ' ' + U.short), roRow('end', C, t('cv.al.end'), formatStation(al.display(al.end), units())));
       out.push(propGrid('alignment', C, rows, { name: { fn: alName }, start: { fn: alStart, station: true }, minR: { fn: alMinR } }), el('div', { className: 'cv-props' }, ...designRows(a)));   // 0.7.1 71.24
     } else {
       const nm = el('input', { type: 'text', className: 'cv-input', id: 'cv-al-name', value: a.name, maxLength: 120 });
@@ -114,8 +123,11 @@ export function mountProps(ctx) {
       out.push(el('div', { className: 'cv-props' }, ...row(t('fl.props.name'), nm, 'cv-al-name'), ...row(t('cv.al.start'), st, 'cv-al-start'),
         ...row(t('why.minr'), el('div', { className: 'cv-row' }, minR, el('span', { className: 'cv-unit' }, U.short)), 'cv-al-minr'),
         ...designRows(a),   // 0.7.1 71.24: design speed and class
-        ...(al.ok ? [...row(t('fl.props.length'), fixed(al.length, 2) + ' ' + U.short), ...row(t('cv.al.end'), formatStation(al.end, units()))] : [])));
+        ...(al.ok ? [...row(t('fl.props.length'), fixed(al.length, 2) + ' ' + U.short), ...row(t('cv.al.end'), formatStation(al.display(al.end), units()))] : [])));
     }
+    // Slice 1: station equations (read from LandXML or IFC), shown read-only
+    if (al.eqs?.length) out.push(el('h3', { className: 'cv-h3' }, t('cv.al.eqs')), el('ul', { className: 'cv-eqs', 'data-al-eqs': '' }, ...al.eqs.map((q, i) => el('li', {}, t('cv.al.eq.row', { back: formatStation(al.eqBack(i), units()), ahead: formatStation(q.ahead, units()) })))),
+      el('p', { className: 'cv-note' }, t('cv.al.eq.note')));
     const why = curveWhy(a.pis, { minR: a.minR || 0 });
     if (why.length) out.push(whyBlock(a, why));
     else if (al.errors.length) out.push(el('div', { className: 'cv-report is-error' }, el('ul', {}, ...al.errors.map((e) => el('li', {}, e)))));
@@ -143,7 +155,7 @@ export function mountProps(ctx) {
     const cvs = al.ok ? al.curves : [];
     if (cvs.length) {
       out.push(el('h3', { className: 'cv-h3' }, t('cv.al.curves')));
-      const st = (v) => formatStation(v, units());
+      const st = (v) => formatStation(al.display(v), units());
       out.push(el('ol', { className: 'cv-curves' }, ...cvs.map((c) => {
         const sp = c.ls1 > 0 || c.ls2 > 0, dg = (v) => dms(v * 180 / Math.PI);
         return el('li', {},
@@ -227,7 +239,7 @@ export function mountProps(ctx) {
       const interior = i > 0 && i < a.pvis.length - 1;
       tbody.append(el('tr', { className: ctx.selPvi === i ? 'is-sel' : '' },
         el('td', {}, el('button', { type: 'button', className: 'cv-linkbtn', onclick: () => { ctx.selPvi = i; renderProfile(); renderProps(); } }, String(i + 1))),
-        el('td', { className: 'cv-pickcell' }, numInput(formatStation(v.sta, units()), (x) => { const s = parseStation(x, units()); if (s === null) return false; ctx.project.change(t('cv.undo.pvi.sta'), () => { const p = findAl(a.id).pvis; p[i].sta = s; p.sort((m, n) => m.sta - n.sta); }); }, { text: true, station: true, label: t('cv.pvi.sta.of', { n: i + 1 }) }), pviPickBtn(i, 'sta')),
+        el('td', { className: 'cv-pickcell' }, numInput(formatStation(al.display(v.sta), units()), (x) => { const s = staIn(al, x); if (s === null) return false; ctx.project.change(t('cv.undo.pvi.sta'), () => { const p = findAl(a.id).pvis; p[i].sta = s; p.sort((m, n) => m.sta - n.sta); }); }, { text: true, station: true, label: t('cv.pvi.sta.of', { n: i + 1 }) }), pviPickBtn(i, 'sta')),
         el('td', { className: 'cv-pickcell' }, numInput(fixed(v.z, 2), (x) => { const z = Number(x); if (!Number.isFinite(z) || x === '') return false; ctx.project.change(t('cv.undo.pvi.z'), () => { findAl(a.id).pvis[i].z = z; }); }, { label: t('cv.pvi.z.of', { n: i + 1 }) }), pviPickBtn(i, 'z')),
         el('td', interior ? {} : { className: 'cv-dash' }, interior ? numInput(v.L || 0, (x) => { const L = Number(x); if (!(L >= 0)) return false; ctx.project.change(t('cv.undo.pvi.l'), () => { findAl(a.id).pvis[i].L = L; }); }, { label: t('cv.pvi.l.of', { n: i + 1 }), min: 0 }) : '—'),
         slopeCell(a, i),
@@ -240,18 +252,18 @@ export function mountProps(ctx) {
     if (prof.ok) {
       const lines = prof.grades.map((g, i) => t('cv.prof.grade', { n: i + 1, g: pct(g.g) }));
       for (const c of prof.curves) {
-        lines.push(t(c.kind === 'crest' ? 'cv.prof.crest' : 'cv.prof.sag', { sta: formatStation(c.pvi, units()), l: fixed(c.L, 2), k: fixed(c.K, 1), bvc: formatStation(c.bvc, units()), zbvc: fixed(c.zBvc, 2), evc: formatStation(c.evc, units()), zevc: fixed(c.zEvc, 2) }));
+        lines.push(t(c.kind === 'crest' ? 'cv.prof.crest' : 'cv.prof.sag', { sta: formatStation(al.display(c.pvi), units()), l: fixed(c.L, 2), k: fixed(c.K, 1), bvc: formatStation(al.display(c.bvc), units()), zbvc: fixed(c.zBvc, 2), evc: formatStation(al.display(c.evc), units()), zevc: fixed(c.zEvc, 2) }));
         const hp = c.high || c.low;
-        if (hp) lines.push(t(c.high ? 'cv.prof.high' : 'cv.prof.low', { sta: formatStation(hp.sta, units()), z: fixed(hp.z, 2) }));
+        if (hp) lines.push(t(c.high ? 'cv.prof.high' : 'cv.prof.low', { sta: formatStation(al.display(hp.sta), units()), z: fixed(hp.z, 2) }));
       }
       out.push(el('ul', { className: 'cv-note cv-plainlist', 'data-profile-facts': '' }, ...lines.map((l) => el('li', {}, l))));
     }
-    if (a.pvis.length && (a.pvis[0].sta > al.start + 1e-6 || a.pvis[a.pvis.length - 1].sta < al.end - 1e-6)) out.push(el('p', { className: 'cv-note' }, t('cv.prof.partial', { from: formatStation(al.start, units()), to: formatStation(al.end, units()) })));
+    if (a.pvis.length && (a.pvis[0].sta > al.start + 1e-6 || a.pvis[a.pvis.length - 1].sta < al.end - 1e-6)) out.push(el('p', { className: 'cv-note' }, t('cv.prof.partial', { from: formatStation(al.start, units()), to: formatStation(al.display(al.end), units()) })));
     return out;
   }
 
   function corridorProps(a) {
-    const out = [el('h3', { className: 'cv-h3' }, t('cv.co.head'))], U = u();
+    const out = [el('h3', { className: 'cv-h3' }, t('cv.co.head'))], U = u(), al = ctx.project.alignment(a);
     const c = { ...defaultAssembly(units()), ...(a.corridor || {}) };
     const on = el('input', { type: 'checkbox', id: 'cv-co-on', checked: !!a.corridor?.on });
     on.addEventListener('change', () => ctx.project.change(on.checked ? t('cv.undo.co.on') : t('cv.undo.co.off'), () => { const x = findAl(a.id); x.corridor = { ...defaultAssembly(units()), ...(x.corridor || {}), on: on.checked }; }));
@@ -280,7 +292,7 @@ export function mountProps(ctx) {
     if (others.length) out.push(el('div', { className: 'cv-report is-error' }, el('ul', {}, ...others.map((p) => el('li', {}, p)))));
     else if (it?.sections) {
       const vi = ctx.project.volumes()?.items?.find((x) => x.id === a.id);
-      out.push(el('p', { className: 'cv-note', 'data-corridor-facts': '' }, vi ? t('cv.co.facts.vol', { n: it.sections.length, from: formatStation(it.from, units()), to: formatStation(it.to, units()), cut: volumeText(vi.cut, units()), fill: volumeText(vi.fill, units()) }) : t('cv.co.facts', { n: it.sections.length, from: formatStation(it.from, units()), to: formatStation(it.to, units()) })));
+      out.push(el('p', { className: 'cv-note', 'data-corridor-facts': '' }, vi ? t('cv.co.facts.vol', { n: it.sections.length, from: formatStation(al.display(it.from), units()), to: formatStation(al.display(it.to), units()), cut: volumeText(vi.cut, units()), fill: volumeText(vi.fill, units()) }) : t('cv.co.facts', { n: it.sections.length, from: formatStation(al.display(it.from), units()), to: formatStation(al.display(it.to), units()) })));
     }
     if (railTrack) return out;   // 0.7.1 71.26: no targets or superelevation on a track (its cant is in the Railway block)
     out.push(...tpUi.corridorBlock(a, a.corridor, a.id, it));   // 0.9 SU.1110: templates by station, left and right apart

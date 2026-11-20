@@ -211,7 +211,7 @@ export function reconcile(obj, diff, readAlignments = []) {
       const a = (obj.alignments || []).find((x) => String(x.id) === o.id);
       if (!a) continue;
       const al = o.kind === 'al' && readAlignments.find((x) => x.gidTag === 'al|' + o.id);
-      if (al) { a.pis = al.pis; a.pvis = al.pvis; a.start = al.start; replaced.push(a.name); }
+      if (al) { a.pis = al.pis; a.pvis = al.pvis; a.start = al.start; if (al.eqs?.length) a.eqs = al.eqs; else delete a.eqs; replaced.push(a.name); }
       else if (o.kind === 'al' && o.missing.length && !o.changed.length) { obj.alignments = obj.alignments.filter((x) => x !== a); dropped.push(a.name); }
       continue;
     }

@@ -34,7 +34,7 @@ import { IfcFile } from './ifc/model.js';
 import { GeoCtx } from './ifc/geo-ctx.js';
 import { Geometry } from './ifc/geometry.js';
 import { t } from './i18n.js';
-import { transitionShape, transitionAt, cubicParamFor, buildAlignment } from './alignment.js';   // 0.7.1 71.26 / B: rail transitions
+import { transitionShape, transitionAt, cubicParamFor, buildAlignment, cleanEquations } from './alignment.js';   // 0.7.1 71.26 / B: rail transitions
 import { railDefaults, cleanRail } from './rail.js';
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -189,7 +189,7 @@ export function readCivilIfc(bytes, { units = null, maxRefTriangles = 2_000_000 
     const speed = fin(c.DesignSpeedValue) ? c.DesignSpeedValue : null, unit = c.DesignSpeedUnit === 'mph' ? 'mph' : 'km/h', cls = typeof c.DesignClass === 'string' ? c.DesignClass : '';
     return speed !== null || cls ? { ...(speed !== null ? { speed } : {}), unit, ...(cls ? { cls } : {}) } : null;
   };
-  const fromSegs = (name, h, v, start, from, id, cant = null) => {
+  const fromSegs = (name, h, v, start, from, id, cant = null, eqs = []) => {
     const r = layoutToPis(h);
     if (!r.pis) { notes.push(t('ifc.in.al.skip', { name, why: r.notes.join(' ') })); return; }
     const pv = layoutToPvis(v, start);
@@ -207,7 +207,7 @@ export function readCivilIfc(bytes, { units = null, maxRefTriangles = 2_000_000 
       rail = cleanRail(own || { ...railDefaults(pu), base: Math.round(cant.base * 1000) / 1000 }, pu);
       if (!own) notes.push(t('ifc.in.al.rail', { name }));
     }
-    out.alignments.push({ name, start, pis: r.pis, pvis: pv.pvis.length >= 2 ? pv.pvis : [], from, notes: [...r.notes, ...pv.notes], design: designOf(id), gid: g.str(g.a(id, 'GlobalId')), ...(rail ? { rail } : {}) });
+    out.alignments.push({ name, start, pis: r.pis, pvis: pv.pvis.length >= 2 ? pv.pvis : [], from, notes: [...r.notes, ...pv.notes], design: designOf(id), gid: g.str(g.a(id, 'GlobalId')), ...(rail ? { rail } : {}), ...(eqs.length ? { eqs: cleanEquations(eqs) } : {}) });
     used.add(id);
   };
 
@@ -224,6 +224,20 @@ export function readCivilIfc(bytes, { units = null, maxRefTriangles = 2_000_000 
     for (const r of kids.filter((x) => g.t(x) === 'IFCREFERENT')) {
       const ps = P.get(r)?.Pset_Stationing, d = (() => { const lp = g.ref(g.a(r, 'ObjectPlacement')); const rp = lp !== null ? g.ref(g.a(lp, 'RelativePlacement')) : null; const loc = rp !== null ? g.ref(g.a(rp, 'Location')) : null; return loc !== null ? g.num(g.a(loc, 'DistanceAlong'), null) : null; })();
       if (ps && fin(ps.Station) && (d === null || Math.abs(d) < 1e-9)) { start = ps.Station * k; break; }
+    }
+    // Slice 1: station equations — a later STATION referent whose station isn't the one the stationing so far gives there
+    const eqs = [];
+    {
+      const cand = [];
+      for (const r of kids.filter((x) => g.t(x) === 'IFCREFERENT' && g.enm(g.a(x, 'PredefinedType')) === 'STATION')) {
+        const ps = P.get(r)?.Pset_Stationing, lp = g.ref(g.a(r, 'ObjectPlacement')), rp = lp !== null ? g.ref(g.a(lp, 'RelativePlacement')) : null, loc = rp !== null ? g.ref(g.a(rp, 'Location')) : null, d = loc !== null ? g.num(g.a(loc, 'DistanceAlong'), null) : null;
+        if (ps && fin(ps.Station) && fin(d) && d > 1e-9) cand.push({ internal: start + d * LEN, ahead: ps.Station * k, back: fin(ps.IncomingStation) ? ps.IncomingStation * k : undefined });
+      }
+      cand.sort((x, y) => x.internal - y.internal);
+      for (const q of cand) {
+        const last = eqs[eqs.length - 1], shown = last ? q.internal - last.internal + last.ahead : q.internal;
+        if (Math.abs(q.ahead - shown) > 1e-6) eqs.push(q);
+      }
     }
     const h = [], v = [];
     let cant = null;
@@ -243,7 +257,7 @@ export function readCivilIfc(bytes, { units = null, maxRefTriangles = 2_000_000 
           sl: g.num(g.a(dp, 'StartCantLeft'), 0) * mm, sr: g.num(g.a(dp, 'StartCantRight'), 0) * mm, el: g.num(g.a(dp, 'EndCantLeft'), g.num(g.a(dp, 'StartCantLeft'), 0)) * mm, er: g.num(g.a(dp, 'EndCantRight'), g.num(g.a(dp, 'StartCantRight'), 0)) * mm })) };
       }
     }
-    fromSegs(name, h, v, start, 'layout', al, cant);
+    fromSegs(name, h, v, start, 'layout', al, cant, eqs);
   }
 
   // ---- IFC 4x1: IfcAlignmentCurve (read by position: cc-ifc has no 4x1 table)
@@ -341,7 +355,7 @@ export function applyIfcImport(project, r, { eg = -1, refs = true, file = 'file.
   const addAlignments = (st) => {
     for (const a of r.alignments) {
       const id = project.nextId('a');
-      st.alignments.push({ id, name: a.name.slice(0, 120), start: a.start, pis: a.pis, pvis: a.pvis, ...(a.design ? { design: a.design } : {}), ...(a.rail ? { rail: a.rail } : {}) });
+      st.alignments.push({ id, name: a.name.slice(0, 120), start: a.start, pis: a.pis, pvis: a.pvis, ...(a.design ? { design: a.design } : {}), ...(a.rail ? { rail: a.rail } : {}), ...(a.eqs?.length ? { eqs: a.eqs } : {}) });
       added.push(id);
     }
     if (!s.alignments.length && !project.points.length && st.name === t('project.untitled')) st.name = file.replace(/\.[^.]+$/, '').slice(0, 120);

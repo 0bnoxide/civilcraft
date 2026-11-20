@@ -28,7 +28,8 @@ const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 export function stakeStations(al, { from = al.start, to = al.end, step = 50, keys = true } = {}) {
   const a = Math.max(al.start, Math.min(from, to)), b = Math.min(al.end, Math.max(from, to));
   const set = new Set([a, b]);
-  if (step > 0) for (let k = Math.ceil((a - EPS) / step); k * step <= b + EPS; k++) set.add(Math.min(b, Math.max(a, k * step)));
+  // Slice 1: at whole multiples of step of the displayed station (station equations)
+  if (step > 0) { if (al.gridStations) for (const g of al.gridStations(step, a, b)) set.add(Math.min(b, Math.max(a, g.sta))); else for (let k = Math.ceil((a - EPS) / step); k * step <= b + EPS; k++) set.add(Math.min(b, Math.max(a, k * step))); }
   if (keys) for (const e of al.elements || []) for (const s of [e.sta, e.sta + e.len]) if (s > a + EPS && s < b - EPS) set.add(s);
   return [...set].sort((x, y) => x - y).filter((s, i, arr) => i === 0 || s - arr[i - 1] > 1e-6);
 }
@@ -44,7 +45,7 @@ export function stakeRows(al, { stations, offsets = [0], design = () => null, gr
   for (const sta of stations) for (const off of offsets) {
     const { x, y } = place(al, sta, off);
     const d = design(sta, off, x, y), g = ground(x, y);
-    rows.push({ id: prefix + n++, sta, off, x, y, design: fin(d) ? d : null, ground: fin(g) ? g : null, cf: fin(d) && fin(g) ? g - d : null });
+    rows.push({ id: prefix + n++, sta, show: al.display ? al.display(sta) : sta, off, x, y, design: fin(d) ? d : null, ground: fin(g) ? g : null, cf: fin(d) && fin(g) ? g - d : null });
   }
   return rows;
 }
@@ -55,7 +56,7 @@ export function pointRows(al, points, { design = () => null, ground = null } = {
     const so = al.stationOffset(p.x, p.y);
     if (!so || so.outside) { outside++; continue; }
     const d = design(so.sta, so.off, p.x, p.y), g = fin(p.z) ? p.z : ground ? ground(p.x, p.y) : null;
-    rows.push({ id: p.n, sta: so.sta, off: so.off, x: p.x, y: p.y, design: fin(d) ? d : null, ground: fin(g) ? g : null, cf: fin(d) && fin(g) ? g - d : null });
+    rows.push({ id: p.n, sta: so.sta, show: al.display ? al.display(so.sta) : so.sta, off: so.off, x: p.x, y: p.y, design: fin(d) ? d : null, ground: fin(g) ? g : null, cf: fin(d) && fin(g) ? g - d : null });
   }
   rows.sort((a, b) => a.sta - b.sta || a.off - b.off);
   return { rows, outside };
@@ -94,7 +95,7 @@ export function stakingCsv(rows, { units = 'ft', title = '' } = {}) {
   const out = [];
   if (title) out.push([title]);
   out.push([t('sk.c.point'), t('sk.c.sta'), t('sk.c.off', { u }), t('sk.c.n'), t('sk.c.e'), t('sk.c.design'), t('sk.c.ground'), t('sk.c.cf', { u }), t('sk.c.cfn')]);
-  for (const r of rows) out.push([r.id, formatStation(r.sta, units), offsetText(r.off), num(r.y, 3), num(r.x, 3), num(r.design, 3), num(r.ground, 3), cutFillText(r.cf), num(r.cf, 3)]);
+  for (const r of rows) out.push([r.id, formatStation(r.show ?? r.sta, units), offsetText(r.off), num(r.y, 3), num(r.x, 3), num(r.design, 3), num(r.ground, 3), cutFillText(r.cf), num(r.cf, 3)]);
   return out.map((r) => r.map((v) => c(q(v))).join(',')).join('\r\n') + '\r\n';
 }
 
@@ -113,7 +114,7 @@ export function stakingSheets(rows, { paper = 'letter', landscape = true, units 
   const W = x1 - x0;
   let cx = x0;
   for (const col of cols) { col.x0 = cx; cx += col.w * W; col.x1 = cx; }
-  const cell = (r, k) => ({ id: String(r.id), sta: formatStation(r.sta, units), off: offsetText(r.off), n: num(r.y, 3), e: num(r.x, 3), design: num(r.design, 2), ground: num(r.ground, 2), cf: cutFillText(r.cf) }[k]);
+  const cell = (r, k) => ({ id: String(r.id), sta: formatStation(r.show ?? r.sta, units), off: offsetText(r.off), n: num(r.y, 3), e: num(r.x, 3), design: num(r.design, 2), ground: num(r.ground, 2), cf: cutFillText(r.cf) }[k]);
   const pages = Math.max(1, Math.ceil(rows.length / perPage)), sheets = [];
   for (let pg = 0; pg < pages; pg++) {
     const here = rows.slice(pg * perPage, (pg + 1) * perPage), strokes = [], texts = [];

@@ -41,7 +41,7 @@ export function createStaking(ctx) {
     const id = 'cv-sk', U0 = U();
     const inp = (sfx, value, attrs = {}) => el('input', { type: 'text', className: 'cv-input', id: id + '-' + sfx, value, ...attrs });
     const src = el('select', { className: 'cv-select', id: id + '-src' }, el('option', { value: 'grid' }, t('sk.src.grid')), el('option', { value: 'pts' }, t('sk.src.pts')));
-    const from = inp('from', formatStation(al.start, U0), { style: 'width:8rem' }), to = inp('to', formatStation(al.end, U0), { style: 'width:8rem' });
+    const from = inp('from', formatStation(al.start, U0), { style: 'width:8rem' }), to = inp('to', formatStation(al.display(al.end), U0), { style: 'width:8rem' });
     const step = inp('step', U0 === 'm' ? '20' : '50', { inputMode: 'decimal', style: 'width:6rem' });
     const c = a.corridor;
     const edges = c?.on ? [-(c.lane + c.shoulder), -c.lane, 0, c.lane, c.lane + c.shoulder] : [0];
@@ -69,7 +69,8 @@ export function createStaking(ctx) {
       const errs = [], design = designFor(a), egS = P().eg().surface, ground = (x, y) => egS?.elevationAt(x, y, 1e-6) ?? null;
       let notes = [];
       if (src.value === 'grid') {
-        const f = parseStation(from.value), tt = parseStation(to.value), s = Number(step.value), o = parseOffsets(offs.value), n0 = Number(first.value);
+        const f = al.internal(parseStation(from.value)), tt = al.internal(parseStation(to.value)),   // Slice 1: typed stations are displayed ones
+           s = Number(step.value), o = parseOffsets(offs.value), n0 = Number(first.value);
         if (!Number.isFinite(f) || !Number.isFinite(tt)) errs.push(t('sk.err.sta'));
         if (!(s > 0)) errs.push(t('sk.err.step'));
         if (o.error !== undefined) errs.push(t('sk.err.off', { tok: o.error }));
@@ -98,7 +99,7 @@ export function createStaking(ctx) {
         el('p', { className: 'cv-note', 'data-sk-count': '' }, t('sk.count', { n: rows.length })),
         el('div', { className: 'cv-table-wrap' }, el('table', { className: 'cv-table', 'data-sk-table': '' },
           el('thead', {}, el('tr', {}, ...[t('sk.c.point'), t('sk.c.sta'), t('sk.c.off', { u: L() }), t('sk.c.design'), t('sk.c.ground'), t('sk.c.cf', { u: L() })].map((h) => el('th', { scope: 'col' }, h)))),
-          el('tbody', {}, ...shown.map((r) => el('tr', {}, el('td', {}, String(r.id)), el('td', {}, formatStation(r.sta, U())), el('td', { className: 'num' }, offsetText(r.off)),
+          el('tbody', {}, ...shown.map((r) => el('tr', {}, el('td', {}, String(r.id)), el('td', {}, formatStation(r.show ?? r.sta, U())), el('td', { className: 'num' }, offsetText(r.off)),
             el('td', { className: 'num' }, r.design === null ? '—' : fixed(r.design, 2)), el('td', { className: 'num' }, r.ground === null ? '—' : fixed(r.ground, 2)), el('td', { className: 'num' }, cutFillText(r.cf) || '—')))))),
         ...(rows.length > shown.length ? [el('p', { className: 'cv-note' }, t('sk.more', { n: rows.length - shown.length }))] : []),
         ...notes.map((m) => el('p', { className: 'cv-note' }, m)));
