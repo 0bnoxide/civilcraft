@@ -22,6 +22,7 @@
 
 import { writePair, readNative, decide, reconcile } from './ifc-native.js';
 import { t } from './i18n.js';
+import { footOf } from './units.js';
 
 const isJson = (n) => /\.json$/i.test(n || ''), isIfc = (n) => /\.ifc$/i.test(n || '');
 const stemOf = (n) => String(n || '').replace(/\.civilcraft\.json$/i, '').replace(/\.(json|ifc)$/i, '');
@@ -157,7 +158,7 @@ export function createNative(ctx) {
     if (d.reconcile) {
       // a lone IFC changed elsewhere: keep what still matches; the IFC's own alignments where CivilCraft's changed
       const { readCivilIfc } = await import('./ifc-civil-read.js');
-      const obj = JSON.parse(text), read = readCivilIfc(ifcBytes, { units: obj.units === 'm' ? 'm' : 'ft' }).alignments.map((a) => ({ ...a, gidTag: (r.native.elements[a.gid]?.[0] || '').replace(/^el\|/, '') }));
+      const obj = JSON.parse(text), read = readCivilIfc(ifcBytes, { units: obj.units === 'm' ? 'm' : 'ft', foot: footOf(obj.units === 'm' ? 'm' : 'ft', obj.crs, obj.foot) }).alignments.map((a) => ({ ...a, gidTag: (r.native.elements[a.gid]?.[0] || '').replace(/^el\|/, '') }));
       const rc = reconcile(obj, d.diff, read);
       text = JSON.stringify(rc.obj);
       if (rc.replaced.length || rc.dropped.length) extra = ' ' + t('ifc.native.reconciled', { replaced: rc.replaced.join(', ') || '—', dropped: rc.dropped.join(', ') || '—' });
@@ -186,7 +187,7 @@ export function createNative(ctx) {
     if (action === 'ifcSave') return save();
     if (action === 'ifcTake' && lastIfc) {
       const { readCivilIfc, applyIfcImport } = await import('./ifc-civil-read.js');
-      const p = P(), r = readCivilIfc(lastIfc.bytes, { units: p.state.units });
+      const p = P(), r = readCivilIfc(lastIfc.bytes, { units: p.state.units, foot: footOf(p.state.units, p.state.crs, p.state.foot) });
       const res = applyIfcImport(p, { ...r, alignments: [] }, { eg: -1, refs: true, file: lastIfc.name });
       ctx.say(t('ifc.native.taken', { ifc: lastIfc.name, n: res.refs }));
       return true;

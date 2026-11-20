@@ -2,7 +2,9 @@
 /**
  * landxml.js — LandXML 1.2 in and out. No DOM.
  *
- *   writeLandXml({ name, units, points, surfaces, alignments, date }) → string
+ *   writeLandXml({ name, units, foot, points, surfaces, alignments, date }) → string
+ *     foot        Slice 2: 'ft' | 'ftUS' | null: the project's foot (units.js footOf; null → the coordinate system's, else US survey)
+ *                   → linearUnit "foot" or "USSurveyFoot"
  *     points      [{ n, x, y, z, d }]                          → CgPoints/CgPoint (name, desc, code)
  *     surfaces    [{ name, desc, surface, breaklines, boundary }] → Surface: SourceData (Breaklines, Boundaries)
  *                                                                  + Definition surfType="TIN" (Pnts/P, Faces/F)
@@ -14,7 +16,8 @@
  *                   Property use / closed. An arc's ends may sit at different elevations (z along the arc, one grade).
  *     crs         state.crs (GIS) → <CoordinateSystem name epsgCode (when it has one) ogcWktCode (a .prj's WKT, no code)
  *                   desc (ground/local coordinates: the scale and base, so a reader knows they are not grid)>
- *   readLandXml(text) → { units, linearUnit, name, points, surfaces, alignments, networks, coordinateSystem, notes }
+ *   readLandXml(text) → { units, linearUnit, foot, name, points, surfaces, alignments, networks, coordinateSystem, notes }
+ *     foot        Slice 2: 'ft' (linearUnit foot) | 'ftUS' (USSurveyFoot) | null (metres, or a foot not named)
  *     coordinateSystem  null | { name, epsgCode (number | null), ogcWktCode (text | null), desc } (GIS: offered as the
  *                       project's system when opened)
  *     surfaces    [{ name, desc, pts:[{x,y,z}|null], faces:[[i,j,k]], breaklines:[{name,pts}], boundary:[{x,y}]|null }]
@@ -30,7 +33,7 @@
 
 import { t } from "./i18n.js";
 import { parseXml, kids, kid, textOf, esc } from './xml.js';
-import { METRES_PER } from './units.js';
+import { METRES_PER, footOf, footOfLinearUnit, LANDXML_FOOT } from './units.js';
 import { groupKey } from './points.js';
 import { cubicParamFor, buildAlignment } from './alignment.js';   // 0.7.1 71.26: rail transitions in and out; CV.1: the curves' stations for a Cant read back
 
@@ -76,7 +79,7 @@ export function cantXml({ name = '', plan, rail, units = 'm', speed = null, spee
 }
 
 // i18n-ignore: the default <Project name> written into the file (file content)
-export function writeLandXml({ name = 'CivilCraft project', units = 'ft', points = [], surfaces = [], alignments = [], networks = [], features = [], date = new Date(), crs = null }) {
+export function writeLandXml({ name = 'CivilCraft project', units = 'ft', foot = null, points = [], surfaces = [], alignments = [], networks = [], features = [], date = new Date(), crs = null }) {
   const L = [];
   const pad = (x) => String(x).padStart(2, '0');
   const ds = date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
@@ -85,7 +88,7 @@ export function writeLandXml({ name = 'CivilCraft project', units = 'ft', points
   L.push(`<LandXML xmlns="${NS}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="${NS} http://www.landxml.org/schema/LandXML-1.2/LandXML-1.2.xsd" version="1.2" date="${ds}" time="${ts}">`);
   L.push('  <Units>');
   if (units === 'm') L.push('    <Metric areaUnit="squareMeter" linearUnit="meter" volumeUnit="cubicMeter" temperatureUnit="celsius" pressureUnit="milliBars" diameterUnit="millimeter" angularUnit="decimal degrees" directionUnit="decimal degrees"/>');
-  else L.push('    <Imperial areaUnit="squareFoot" linearUnit="USSurveyFoot" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inHG" diameterUnit="inch" angularUnit="decimal degrees" directionUnit="decimal degrees"/>');
+  else L.push(`    <Imperial areaUnit="squareFoot" linearUnit="${LANDXML_FOOT[footOf(units, crs, foot)]}" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inHG" diameterUnit="inch" angularUnit="decimal degrees" directionUnit="decimal degrees"/>`);   // Slice 2: the project's foot, international or US survey
   L.push('  </Units>');
   if (crs && crs.name) {   // GIS: the project's coordinate system (docs/GIS-SPEC.md §2)
     const l = crs.local;
@@ -261,7 +264,7 @@ export function readLandXml(text) {
   if (root.name !== 'LandXML') throw new Error(t('lx.err.root', { tag: '<' + root.name + '>' }));
   const notes = [];
   const note = (m) => { if (!notes.includes(m)) notes.push(m); };
-  const out = { units: null, linearUnit: null, name: '', points: [], surfaces: [], alignments: [], notes };
+  const out = { units: null, linearUnit: null, foot: null, name: '', points: [], surfaces: [], alignments: [], notes };
 
   const U = kid(root, 'Units');
   const unitEl = U && (kid(U, 'Imperial') || kid(U, 'Metric'));
@@ -269,6 +272,9 @@ export function readLandXml(text) {
     out.linearUnit = unitEl.attrs.linearUnit || (unitEl.name === 'Metric' ? 'meter' : 'foot');
     out.units = METRES_PER[out.linearUnit] !== undefined && METRES_PER[out.linearUnit] > 0.5 ? 'm' : 'ft';
     if (!(out.linearUnit in METRES_PER)) note(t(out.units === 'm' ? 'lx.unit.m' : 'lx.unit.ft', { unit: out.linearUnit }));
+    // Slice 2: which foot the file means; an international foot is said, since CivilCraft's feet were US survey feet
+    if (out.units === 'ft') out.foot = footOfLinearUnit(out.linearUnit);
+    if (out.foot === 'ft') note(t('lx.unit.intl'));
   }
   out.name = kid(root, 'Project')?.attrs.name || '';
   // GIS: <CoordinateSystem> (untrusted; the page offers it as the project's system, docs/GIS-SPEC.md §2)

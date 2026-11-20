@@ -16,7 +16,7 @@ import { cleanType } from './structs.js';
 import { cleanFeature } from './featureline.js';
 import { num, el } from './ui-util.js';
 import { parsePoints } from './points.js';
-import { fixed } from './units.js';
+import { fixed, footOf, footMismatch, footWarning } from './units.js';
 import { fitScale, paperBy, PAPERS, scalesFor, sheetWindow, planSheet, toPdf } from './plot.js';
 import { writeDxf } from './dxf.js';
 import { LAYERS, toDxfEntities } from './scene.js';
@@ -66,6 +66,7 @@ export function mountFiles(ctx) {
     if (!(await confirmDiscard())) return;
     const p = new Project(), notes = [...d.notes];
     p.state.units = d.units || 'ft';
+    if (p.state.units === 'ft' && d.foot) p.state.foot = d.foot;   // Slice 2: the foot the file named, kept for saving and export
     p.state.name = (d.name || name.replace(/\.[^.]+$/, '')).slice(0, 120);
     if (d.points.length) p.setPoints(d.points, name);
     const s0 = d.surfaces[0];
@@ -159,7 +160,7 @@ export function mountFiles(ctx) {
       // none is asked about before the points go in (the shell's one dialog, remembered per file). It was read in project units, unasked.
       let unitNote = '';
       if (!res.latlon && globalThis.ccImportUnits) {
-        const IU = globalThis.ccImportUnits, pu = ctx.project.state.units === 'm' ? 'm' : 'ft';
+        const s0 = ctx.project.state, IU = globalThis.ccImportUnits, pu = s0.units === 'm' ? 'm' : footOf(s0.units, s0.crs, s0.foot) === 'ft' ? 'ft' : 'usft';   // Slice 2: the project's own foot
         const a = await IU.resolve({ file: name, format: t('cv.imp.unitformat'), stated: IU.statedInText(text) || ownUnit, choices: ['ft', 'usft', 'm'], suggest: pu, say });
         if (!a) return;
         const k = IU.MM_PER[a.unit] / IU.MM_PER[pu];
@@ -209,7 +210,7 @@ export function mountFiles(ctx) {
     const g = ctx.graded();
     if (g.surface) surfaces.push({ name: t('cv.lx.proposed'), desc: t('cv.lx.proposed.desc', { n: s.pads.length }), surface: g.surface });
     const xml = writeLandXml({
-      name: s.name, units: s.units, points: ctx.project.points, surfaces, crs: s.crs,   // GIS: <CoordinateSystem> when the project has one
+      name: s.name, units: s.units, foot: s.foot, points: ctx.project.points, surfaces, crs: s.crs,   // GIS: <CoordinateSystem> when the project has one; foot: Slice 2
       alignments: s.alignments.map((a) => ({ name: a.name, alignment: ctx.project.alignment(a), eg: r.surface ? { name: s.surface.name || t('surface.eg'), pts: ctx.project.egProfile(a) } : null, profile: a.pvis.length >= 2 ? { name: t('cv.lx.design', { name: a.name }), profile: ctx.project.designProfile(a) } : null, cant: a.rail?.on ? { plan: ctx.project.railPlan(a), rail: a.rail, speed: ctx.project.railAsm(a).rail.speed } : null })),   // cant: CV.1 2026-11-12
       features: s.features || [],   // 0.6 WL.24
       networks: [...(s.water?.pipes?.length ? [waterNetwork(cleanWater(s.water, s.units), s.units, { zAt: (x, y) => { const z = (ctx.graded().surface || ctx.eg().surface)?.elevationAt(x, y); return Number.isFinite(z) ? z : null; } })] : []), ...(s.network ? [{ ...s.network, structures: s.network.structures.map((x) => { const i = ctx.project.networkCheck().structs.get(x.id); return { ...x, rimShown: i?.rim ?? null, sump: i?.sump ?? null }; }) }] : [])],
@@ -220,7 +221,8 @@ export function mountFiles(ctx) {
     const list = [t('cv.pts.n', { n: ctx.project.points.length, count: num(ctx.project.points.length) }), t('cv.surfaces.n', { n: surfaces.length }), skipped ? t('cv.lx.als.skipped', { alignments: als, n: skipped }) : als];
     if (s.network) list.push(t('cv.lx.network'));
     if ((s.features || []).length) list.push(t('cv.lx.features', { n: s.features.length }));   // 0.6 WL.24
-    say(t('cv.lx.exported', { list: list.join(', ') }));
+    const fm = footMismatch(s);   // Slice 2: the file says the project's foot; its coordinate system uses the other
+    say(t('cv.lx.exported', { list: list.join(', ') }) + (fm ? ' ' + footWarning(fm) : ''));
   }
 
   function extentsAll() {

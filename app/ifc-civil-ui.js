@@ -17,6 +17,7 @@
 import { civilIfcModel, modelEmpty } from './ifc-civil-model.js';
 import { writeCivilIfc, fileOrigin, SCHEMAS, SCHEMA_INFO } from './ifc-civil.js';
 import { readCivilIfc, applyIfcImport } from './ifc-civil-read.js';
+import { footOf, footMismatch, footWarning } from './units.js';
 import { Project } from './project.js';
 import { t } from './i18n.js';
 
@@ -70,7 +71,8 @@ export function installIfc(ctx) {
       const r = writeCivilIfc(model, { schema, origin, seed: p.state.name || 'site' });
       const name = ctx.fileStem() + '-ifc' + SCHEMA_INFO[schema].file + '.ifc';   // i18n-ignore: a file name ending
       ctx.download(new TextEncoder().encode(r.text), name, 'application/x-step');
-      ctx.say(t('ifc.done', { file: name, schema: $(dlg, `[data-ifc-schema] option[value="${schema}"]`).textContent, n: r.counts.elements }));
+      const fm = footMismatch(p.state);   // Slice 2
+      ctx.say(t('ifc.done', { file: name, schema: $(dlg, `[data-ifc-schema] option[value="${schema}"]`).textContent, n: r.counts.elements }) + (fm ? ' ' + footWarning(fm) : ''));
     } catch (err) { ctx.say(t('ifc.failed', { why: err.message })); } finally { ctx.busy(null); }
   }
 
@@ -80,7 +82,7 @@ export function installIfc(ctx) {
     let r;
     try {
       const p = ctx.project(), fresh = !p.points.length && !p.state.alignments.length && !p.state.surface.tin && !p.state.pads.length;
-      r = readCivilIfc(new Uint8Array(await file.arrayBuffer()), { units: fresh ? null : p.state.units });
+      r = readCivilIfc(new Uint8Array(await file.arrayBuffer()), fresh ? {} : { units: p.state.units, foot: footOf(p.state.units, p.state.crs, p.state.foot) });   // foot: Slice 2
       r.fresh = fresh;
     } catch (err) { ctx.say(t('ifc.in.failed', { file: file.name, why: err.message })); return; } finally { ctx.busy(null); }
     if (!r.alignments.length && !r.surfaces.length && !r.refs.length) { ctx.say(t('ifc.in.none', { file: file.name }) + (r.notes.length ? ' ' + r.notes.join(' ') : '')); return; }
@@ -106,6 +108,7 @@ export function installIfc(ctx) {
       if (!(await ctx.confirmDiscard())) return;
       const np = new Project();
       np.state.units = r.units;
+      if (r.units === 'ft' && r.foot) np.state.foot = r.foot;   // Slice 2: the file's foot
       np.state.name = file.replace(/\.[^.]+$/, '').slice(0, 120);
       ctx.setProject(np);
     }

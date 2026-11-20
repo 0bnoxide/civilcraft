@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2" date="2026-11-20" time="00:00:00">
+  <Units>
+    <Imperial areaUnit="squareFoot" linearUnit="USSurveyFoot" volumeUnit="cubicYard" temperatureUnit="fahrenheit" pressureUnit="inHG" diameterUnit="inch" angularUnit="decimal degrees" directionUnit="decimal degrees"/>
+  </Units>
+  <Project name="foot-USSurveyFoot"/>
+  <CgPoints>
+    <CgPoint name="1001" desc="TOPO">800000.000 2000000.000 3000.000</CgPoint>
+    <CgPoint name="1002" desc="TOPO">800000.000 2000500.000 3002.000</CgPoint>
+    <CgPoint name="1003" desc="TOPO">800500.000 2000500.000 3003.000</CgPoint>
+    <CgPoint name="1004" desc="EP">800500.000 2000000.000 3001.000</CgPoint>
+  </CgPoints>
+  <Surfaces>
+    <Surface name="EG">
+      <Definition surfType="TIN">
+        <Pnts>
+          <P id="1">800000.000 2000000.000 3000.000</P>
+          <P id="2">800000.000 2000500.000 3002.000</P>
+          <P id="3">800500.000 2000500.000 3003.000</P>
+          <P id="4">800500.000 2000000.000 3001.000</P>
+        </Pnts>
+        <Faces>
+          <F>1 2 3</F>
+          <F>1 3 4</F>
+        </Faces>
+      </Definition>
+    </Surface>
+  </Surfaces>
+  <Alignments>
+    <Alignment name="CL" length="500" staStart="1000">
+      <CoordGeom>
+        <Line length="500"><Start>800250.000 2000000.000</Start><End>800250.000 2000500.000</End></Line>
+      </CoordGeom>
+    </Alignment>
+  </Alignments>
+</LandXML>

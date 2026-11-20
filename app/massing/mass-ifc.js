@@ -16,7 +16,7 @@
  *               simplified (bool: the proxy's shape is the footprint extruded, the solid was something else), source }]
  *     shared { name, floors, floorHeight, z0 } | null   ONE IfcBuilding for every mass (options of one building: the storeys are
  *               the building's, `floors` of them); without it each mass is its own IfcBuilding with its own storeys (a site study)
- *   defaultOrigin(masses) -> { x, y, z }     fileUnit(units, crs) -> 'm' | 'ft' | 'ftUS'
+ *   defaultOrigin(masses) -> { x, y, z }     fileUnit(units, crs, foot) -> 'm' | 'ft' | 'ftUS'
  *
  * The file is written IN THE PROJECT'S LENGTH UNIT (a US survey foot is an IfcConversionBasedUnit, factor 1200/3937 m; a metre
  * an SI unit) and IfcProjectedCRS.MapUnit is that same unit. Areas and volumes are SI, so a Pset area is in square metres
@@ -64,8 +64,9 @@ export function defaultOrigin(masses) {
 }
 
 /** The file's length unit for a project (0.7.1 71.24: shared with ifc-civil.js): the coordinate system's unit when there is one
- *  ('m' | 'ft' international foot), else the project's (a feet project = the US survey foot). → 'm' | 'ft' | 'ftUS' */
-export function fileUnit(units, crs) { return crs?.unit === 'm' || (!crs && units === 'm') ? 'm' : crs?.unit === 'ft' ? 'ft' : 'ftUS'; }
+ *  ('m' | 'ft' international foot), else the project's (a feet project = the US survey foot). → 'm' | 'ft' | 'ftUS'
+ *  Slice 2: foot, the foot a feet project states ('ft' | 'ftUS': its source file's), comes first. */
+export function fileUnit(units, crs, foot = null) { if (units !== 'm' && (foot === 'ft' || foot === 'ftUS')) return foot; return crs?.unit === 'm' || (!crs && units === 'm') ? 'm' : crs?.unit === 'ft' ? 'ft' : 'ftUS'; }
 
 export function writeMassingIfc({ name = 'Site', units = 'ft', crs = null, lat = null, lon = null, origin = null, masses = [], shared = null } = {}, { seed = name, now = new Date(), guid, app = 'CivilCraft', about = 'CivilCraft building masses', fileName = name + '-masses.ifc' } = {}) {
   if (typeof guid !== 'function') throw new Error('writeMassingIfc: the host gives its GlobalId maker (opts.guid)');   // i18n-ignore: a programming error, never shown to a person
