@@ -50,6 +50,7 @@ import { cleanBlk } from './block-points.js';
 import { buildSurface, surfaceFromFaces } from './tin.js';
 import { gridSurface, METHODS as GRID_METHODS } from './gridding.js';   // 0.9 D9.6: choose the contouring method
 import { smoothContours, LEVELS as SMOOTH_LEVELS } from './contour-smooth.js';   // 0.9.1: contour smoothing (display.smooth 'light' | 'strong'; absent = none)
+import { buildGround } from './ground-surface.js';   // 0.8 SU.911: contour terrain (flat triangles fixed when surface.flatFix > 0)
 import { buildAlignment, TRANSITIONS, cleanEquations } from './alignment.js';
 import { buildProfile, sampleSurface } from './profile.js';
 import { gradedSurface, gridVolume } from './grading.js';
