@@ -29,7 +29,7 @@ export function stakeStations(al, { from = al.start, to = al.end, step = 50, key
   const a = Math.max(al.start, Math.min(from, to)), b = Math.min(al.end, Math.max(from, to));
   const set = new Set([a, b]);
   // Slice 1: at whole multiples of step of the displayed station (station equations)
-  if (step > 0) { if (al.gridStations) for (const g of al.gridStations(step, a, b)) set.add(Math.min(b, Math.max(a, g.sta))); else for (let k = Math.ceil((a - EPS) / step); k * step <= b + EPS; k++) set.add(Math.min(b, Math.max(a, k * step))); }
+  if (step > 0) { if (al.gridStations) for (const g of al.gridStations(step, a, b, Infinity)) set.add(Math.min(b, Math.max(a, g.sta))); else for (let k = Math.ceil((a - EPS) / step); k * step <= b + EPS; k++) set.add(Math.min(b, Math.max(a, k * step))); }
   if (keys) for (const e of al.elements || []) for (const s of [e.sta, e.sta + e.len]) if (s > a + EPS && s < b - EPS) set.add(s);
   return [...set].sort((x, y) => x - y).filter((s, i, arr) => i === 0 || s - arr[i - 1] > 1e-6);
 }

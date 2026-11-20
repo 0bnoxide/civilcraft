@@ -296,11 +296,12 @@ export class Alignment {
   }
 
   /** A displayed station → internal, or null where no point has it (the gap of a forward equation). */
-  internal(d) {
+  internal(d, last = false) {   // last: where an equation makes a station repeat, its later occurrence (a range's end)
     if (!Number.isFinite(d)) return null;
     const E = this.eqs;
     if (!E.length) return d;
-    for (let k = 0; k <= E.length; k++) {
+    for (let j = 0; j <= E.length; j++) {
+      const k = last ? E.length - j : j;
       const from = k ? E[k - 1].internal : -Infinity, to = k < E.length ? E[k].internal : Infinity;
       const s = k ? d - E[k - 1].ahead + E[k - 1].internal : d;
       if (s >= from - 1e-9 && s <= to + 1e-9) return s;
@@ -377,8 +378,8 @@ export class Alignment {
   }
 
   /** Slice 1: internal stations from…to (default the whole alignment) where the displayed station is a whole multiple of step,
-   *  piece by piece between station equations → [{ sta, show }] (at most 20 000, else []). */
-  gridStations(step, from = this.start, to = this.end) {
+   *  piece by piece between station equations → [{ sta, show }] (at most max, else []). */
+  gridStations(step, from = this.start, to = this.end, max = 20000) {
     if (!(step > 0) || !Number.isFinite(from) || !Number.isFinite(to) || to < from) return [];
     const out = [], cuts = [this.start, ...this.eqs.map((q) => q.internal), this.end];
     for (let i = 0; i < cuts.length - 1; i++) {
@@ -386,7 +387,7 @@ export class Alignment {
       const lo = Math.max(a, from), hi = Math.min(b, to);
       if (hi < lo) continue;
       const off = this.display(a) - a, k0 = Math.ceil((lo + off) / step - 1e-9), k1 = Math.floor((hi + off) / step + (last || hi < b ? 1e-9 : -1e-9));
-      if (k1 - k0 + out.length > 20000) return [];
+      if (k1 - k0 + out.length > max) return [];
       for (let k = k0; k <= k1; k++) out.push({ sta: k * step - off, show: k * step });
     }
     return out;

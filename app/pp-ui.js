@@ -49,7 +49,7 @@ export function createSheetsDialog(ctx) {
         el('div', { className: 'cv-dlg-foot' }, el('button', { type: 'button', className: 'btn-line btn-sm-cc', onclick: () => dlg.close() }, t('pp.ui.cancel')), go)));
     close.onclick = () => dlg.close();
     const range = () => {
-      const f = al.internal(parseStation(from.value, U)), e = al.internal(parseStation(to.value, U));   // Slice 1: typed stations are displayed ones
+      const f = al.internal(parseStation(from.value, U)), e = al.internal(parseStation(to.value, U), true);   // Slice 1: typed stations are displayed ones
       if (f === null || e === null || !(e > f)) return null;
       return [Math.max(al.start, f), Math.min(al.end, e)];
     };

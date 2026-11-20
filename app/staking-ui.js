@@ -69,7 +69,7 @@ export function createStaking(ctx) {
       const errs = [], design = designFor(a), egS = P().eg().surface, ground = (x, y) => egS?.elevationAt(x, y, 1e-6) ?? null;
       let notes = [];
       if (src.value === 'grid') {
-        const f = al.internal(parseStation(from.value)), tt = al.internal(parseStation(to.value)),   // Slice 1: typed stations are displayed ones
+        const f = al.internal(parseStation(from.value)), tt = al.internal(parseStation(to.value), true),   // Slice 1: typed stations are displayed ones
            s = Number(step.value), o = parseOffsets(offs.value), n0 = Number(first.value);
         if (!Number.isFinite(f) || !Number.isFinite(tt)) errs.push(t('sk.err.sta'));
         if (!(s > 0)) errs.push(t('sk.err.step'));
