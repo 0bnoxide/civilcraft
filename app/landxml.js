@@ -601,6 +601,7 @@ export function scaleImport(d, k) {
     a.start *= k; a.pis = a.pis.map((q) => ({ ...p(q), r: q.r * k, ...(q.ls1 ? { ls1: q.ls1 * k } : {}), ...(q.ls2 ? { ls2: q.ls2 * k } : {}), ...(q.tr ? { tr: q.tr } : {}) }));
     for (const pr of a.profiles) pr.pvis = pr.pvis.map((v) => ({ sta: v.sta * k, z: v.z * k, L: v.L * k }));
     for (const ps of a.surfProfiles) ps.pts = ps.pts.map((v) => ({ sta: v.sta * k, z: v.z * k }));
+    if (a.eqs) a.eqs = a.eqs.map((q) => ({ ...q, internal: q.internal * k, ahead: q.ahead * k, ...(Number.isFinite(q.back) ? { back: q.back * k } : {}) }));   // Slice 1
   }
   for (const f of d.features || []) f.pts = f.pts.map(p);   // bulges are ratios: they stay
   for (const n of d.networks || []) {

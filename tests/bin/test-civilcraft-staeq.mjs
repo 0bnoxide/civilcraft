@@ -90,6 +90,10 @@ try {
   const rows = ST.stakeRows(al, { stations: [12600], offsets: [0] });
   ok(/127\+00\.00/.test(ST.stakingCsv(rows, { units: 'ft' })), 'the staking report shows 127+00.00 for internal 12600');
 
+  const sc = LX.scaleImport(LX.readLandXml(xml), 0.3048).alignments.find((x) => x.name === E.name);
+  const scal = AL.buildAlignment({ pis: sc.pis, start: sc.start, eqs: sc.eqs });
+  ok(scal.eqs.length === 1 && Math.abs(scal.eqs[0].internal - 12000 * 0.3048) < 1e-6 && Math.abs(scal.display(scal.end) - E.staEnd_display * 0.3048) < 1e-3, 'opened in other units (scaleImport), the equation is scaled with the alignment', sc.eqs);
+
   section('what is not supported says so');
   const bad = xml.replace(/<StaEquation [^>]*\/>/, '<StaEquation staInternal="11000" staBack="11000" staAhead="10900" staIncrement="decreasing"/><StaEquation staInternal="99999" staBack="99999" staAhead="100099"/><StaEquation staInternal="12000" staBack="11990" staAhead="12100"/>');
   const db = LX.readLandXml(bad), ab = db.alignments.find((x) => x.name === E.name);

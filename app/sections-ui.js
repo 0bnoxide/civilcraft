@@ -210,7 +210,7 @@ export function createSections(ctx) {
           el('div', { className: 'cv-props' }, ...row(t('pp.ui.paper'), paper), ...row(t('pp.ui.scale'), scale), ...row(t('pp.ui.vex'), vex)), info),
         el('div', { className: 'cv-dlg-foot' }, el('button', { type: 'button', className: 'btn-line btn-sm-cc', onclick: () => dlg.close() }, t('pp.ui.cancel')), go)));
     close.onclick = () => dlg.close();
-    const build = () => sectionSheets(set, { paper: paper.value, scale: scales.find((x) => x.label === scale.value), vex: Number(vex.value), units: U0, title: P().state.name, name: a.name, disp });
+    const build = () => sectionSheets(set, { paper: paper.value, scale: scales.find((x) => x.label === scale.value), vex: Number(vex.value), units: U0, title: P().state.name, name: a.name, disp: (s) => P().alignment(a).display(s) });   // this alignment's equations, not the viewer's
     const update = () => { const r = build(); info.textContent = [t('xs.ui.info', { n: r.sheets.length, sections: set.sections.length, per: r.perPage }), ...r.notes].join(' '); };
     for (const x of [paper, scale, vex]) x.addEventListener('change', update);
     go.onclick = async () => {
