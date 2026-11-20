@@ -116,7 +116,7 @@ export function railProps(ctx, a, plan, item) {
   if (plan?.curves?.some((c) => c.cant)) {
     const cv = el('canvas', { className: 'cv-se-diagram', 'data-rail-diagram': '', width: 600, height: 200, role: 'img', 'aria-label': t('rail.diagram.label') });
     out.push(el('h3', { className: 'cv-h3' }, t('rail.diagram')), cv);
-    requestAnimationFrame(() => drawCant(cv, plan, { start: al.start, end: al.end, units: U }));
+    requestAnimationFrame(() => drawCant(cv, plan, { start: al.start, end: al.end, units: U, disp: (s) => al.display(s) }));
   }
 
   out.push(...line);
@@ -163,7 +163,7 @@ export function railProps(ctx, a, plan, item) {
 
 /** The cant diagram: station across, each rail's height over the profile up (left rail solid, right dashed), the applied cant
  *  thin, the ramp ends ticked. */
-export function drawCant(cv, plan, { start, end, units = 'm', colors = null } = {}) {
+export function drawCant(cv, plan, { start, end, units = 'm', colors = null, disp = (s) => s } = {}) {
   const dpr = globalThis.devicePixelRatio || 1, w = cv.clientWidth || 600, h = cv.clientHeight || 200;
   cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
   const ctx = cv.getContext('2d');
@@ -182,5 +182,5 @@ export function drawCant(cv, plan, { start, end, units = 'm', colors = null } = 
   ctx.strokeStyle = C.ink; ctx.lineWidth = 1;
   for (const c of plan.curves) for (const r of [c.rampIn, c.rampOut]) if (r) for (const s of [r.from, r.to]) { const x = X(s); ctx.beginPath(); ctx.moveTo(x, h - pad.b); ctx.lineTo(x, h - pad.b + 4); ctx.stroke(); }
   ctx.fillStyle = C.ink; ctx.textBaseline = 'top';
-  ctx.textAlign = 'left'; ctx.fillText(formatStation(start, units, 0), pad.l, h - pad.b + 6); ctx.textAlign = 'right'; ctx.fillText(formatStation(end, units, 0), w - pad.r, h - pad.b + 6);
+  ctx.textAlign = 'left'; ctx.fillText(formatStation(start, units, 0), pad.l, h - pad.b + 6); ctx.textAlign = 'right'; ctx.fillText(formatStation(disp(end), units, 0), w - pad.r, h - pad.b + 6);
 }

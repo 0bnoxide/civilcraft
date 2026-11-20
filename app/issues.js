@@ -67,6 +67,14 @@ export function makeIssue({ id, title, description = '', author = '', pin = null
 export const pinAt = (x, y, { kind = 'plan', z = null, ref = null } = {}) => cleanPin({ kind, x, y, z, ref });
 
 /** A pin on an alignment at a station and offset (positive = right). `al` is the alignment object (pointAt(sta) → { x, y, dir }), `name` its name. */
+// a station the user typed is a displayed one (past any station equation): pin at its internal station, or { gap } where an equation skips it
+export function typedStationPin(al, shown, off = 0, opts = {}) {
+  const sta = typeof al?.internal === 'function' ? al.internal(shown) : shown;
+  if (sta === null) return { gap: true };
+  const pin = stationPin(al, sta, off, opts);
+  return pin ? { pin } : {};
+}
+
 export function stationPin(al, sta, off = 0, { name = '', id = '', z = null } = {}) {
   const p = al?.pointAt?.(sta);
   if (!p || !fin(p.x) || !fin(p.y)) return null;

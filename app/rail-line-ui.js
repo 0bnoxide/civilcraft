@@ -34,7 +34,7 @@ export function railLineProps(ctx, a) {
   const { el } = ctx, P = ctx.project(), U = ctx.units(), us = U === 'm' ? 'm' : 'ft', out = [];
   const find = (s) => s.alignments.find((x) => x.id === a.id);
   const num = (v, commit, o) => ctx.numInput(v, commit, { width: '5.5rem', ...o });
-  const sta = (v) => formatStation(v, U, 0);
+  const sta = (v) => formatStation(P.alignment(a).display(v), U, 0);   // Slice 1: station equations
   const select = (id, opts, value, onPick, label) => { const s = el('select', { className: 'cv-select', id, 'aria-label': label }, ...opts.map(([v, txt]) => el('option', { value: v, selected: String(v) === String(value) }, txt))); s.addEventListener('change', () => onPick(s.value)); return s; };
   const al = P.alignment(a);
 

@@ -49,7 +49,7 @@ export function mountDrive({ bar, stage, view, project, getData, rebuild, say })
     drive.sta = f.sta;
     view.cam.eye = f.eye; view.cam.target = f.target; view.cam.persp = true;
     slider.value = String(drive.sta);
-    staOut.textContent = formatStation(drive.sta, U()) + (f.z !== null && Number.isFinite(f.z) ? '  EL ' + fixed(f.z, 2) : '');
+    staOut.textContent = formatStation(drive.al.display ? drive.al.display(drive.sta) : drive.sta, U()) + (f.z !== null && Number.isFinite(f.z) ? '  EL ' + fixed(f.z, 2) : '');
     view.invalidate();
   }
   function begin(id) {

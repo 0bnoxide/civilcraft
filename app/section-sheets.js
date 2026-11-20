@@ -3,7 +3,7 @@
  * section-sheets.js — cross-section sheets: an alignment's sections (sections.js buildSections) in rows on PDF pages
  * (0.4 V17). No DOM; the Node test drives it (bin/test-civilcraft-sections.mjs § sheets) and plot.js toPdfPages writes it.
  *
- *   sectionSheets(set, { paper, landscape, scale, vex, units, title, name, from, to }) → { sheets, cell, perPage, vex, notes }
+ *   sectionSheets(set, { paper, landscape, scale, vex, units, title, name, from, to, disp }) → { sheets, cell, perPage, vex, notes }
  *     Every section gets a cell of the same size: offsets across at the plan scale (left + right), elevations at scale ×
  *     vex, the cell tall enough for the biggest relief in the set; cells fill rows left to right, top to bottom, in station
  *     order, over as many pages as needed. A cell: grid (offsets every nice step, elevations every nice step, labeled),
@@ -21,7 +21,7 @@ import { zAt } from './sections.js';
 const INK = '#000000', EG = '#606060', FG = '#c00000', GRID = '#c4c4c4', CUT = '#f3c9a6', FILL = '#bfe3c4', MARK = '#8a6200';
 export const SHEET_VEXES = [10, 5, 2, 1];
 
-export function sectionSheets(set, { paper = 'tabloid', landscape = true, scale, vex = 5, units = 'ft', title = '', name = '', from = -Infinity, to = Infinity } = {}) {
+export function sectionSheets(set, { paper = 'tabloid', landscape = true, scale, vex = 5, units = 'ft', title = '', name = '', from = -Infinity, to = Infinity, disp = (s) => s } = {}) {   // disp (Slice 1): internal → displayed station
   const secs = (set?.sections || []).filter((x) => x.sta >= from - 1e-9 && x.sta <= to + 1e-9);
   const notes = [];
   if (!secs.length) return { sheets: [], cell: null, perPage: 0, vex, notes: [t('xs.none')] };
@@ -83,13 +83,13 @@ export function sectionSheets(set, { paper = 'tabloid', landscape = true, scale,
       if (x.design !== x.ground) for (const run of x.design) strokes.push({ color: FG, width: 0.4, pts: run.map((q) => ({ x: X(q.o), y: Y(q.z) })) });
       for (const L of x.layers || []) strokes.push({ color: INK, width: 0.13, dash: [1, 0.5], pts: [{ x: X(L.a.o), y: Y(L.a.z) }, { x: X(L.b.o), y: Y(L.b.z) }] });   // 0.7.1 71.24: course bottoms
       for (const m of x.marks || []) if (Number.isFinite(m.z)) { const q = { x: X(m.o), y: Y(m.z) }; strokes.push({ color: MARK, width: 0.25, pts: [{ x: q.x - 0.6, y: q.y - 0.6 }, { x: q.x + 0.6, y: q.y + 0.6 }, { x: q.x - 0.6, y: q.y + 0.6 }, { x: q.x + 0.6, y: q.y - 0.6 }] }); }
-      texts.push({ color: INK, x: (cx0 + xr) / 2, y: cy0 - 7.5, h: 1.8, rot: 0, align: 'center', text: t('xs.cell', { sta: formatStation(x.sta, units), cut: fixed(x.cut, 2), fill: fixed(x.fill, 2), u: areaU }) });
+      texts.push({ color: INK, x: (cx0 + xr) / 2, y: cy0 - 7.5, h: 1.8, rot: 0, align: 'center', text: t('xs.cell', { sta: formatStation(disp(x.sta), units), cut: fixed(x.cut, 2), fill: fixed(x.fill, 2), u: areaU }) });
     });
     const chrome = [], tt = [];
     chrome.push({ color: INK, width: 0.5, pts: [{ x: MARGIN, y: MARGIN }, { x: P.w - MARGIN, y: MARGIN }, { x: P.w - MARGIN, y: P.h - MARGIN }, { x: MARGIN, y: P.h - MARGIN }], closed: true });
     chrome.push({ color: INK, width: 0.35, pts: [{ x: MARGIN, y: MARGIN + TITLE_H }, { x: P.w - MARGIN, y: MARGIN + TITLE_H }] });
     tt.push({ color: INK, x: MARGIN + 4, y: MARGIN + TITLE_H - 6, h: 4, rot: 0, align: 'left', text: title || name });
-    tt.push({ color: INK, x: MARGIN + 4, y: MARGIN + 3.5, h: 2.2, rot: 0, align: 'left', text: t('xs.strip', { name, a: formatStation(here[0].sta, units), b: formatStation(here[here.length - 1].sta, units), h: hLabel, v: vLabel, vex: used }) });
+    tt.push({ color: INK, x: MARGIN + 4, y: MARGIN + 3.5, h: 2.2, rot: 0, align: 'left', text: t('xs.strip', { name, a: formatStation(disp(here[0].sta), units), b: formatStation(disp(here[here.length - 1].sta), units), h: hLabel, v: vLabel, vex: used }) });
     tt.push({ color: INK, x: P.w - MARGIN - 4, y: MARGIN + TITLE_H - 6, h: 4, rot: 0, align: 'right', text: t('pp.sheet', { n: pg + 1, N: pages }) });
     tt.push({ color: INK, x: P.w - MARGIN - 4, y: MARGIN + 3.5, h: 2.2, rot: 0, align: 'right', text: t('pp.made', { date: new Date().toISOString().slice(0, 10) }) });
     sheets.push({ w: P.w, h: P.h, name: (title || name) + ' ' + (pg + 1), views: [{ clip: { x0: MARGIN, y0: MARGIN + TITLE_H, x1: P.w - MARGIN, y1: P.h - MARGIN }, strokes, texts, fills }], chrome, chromeTexts: tt, stations: here.map((x) => x.sta) });

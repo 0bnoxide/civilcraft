@@ -25,7 +25,7 @@ export function planItems(project, t = tr) {
     const al = project.alignment(a), p0 = a.pis?.[0];
     if (!al?.ok || !p0) continue;
     out.push({ id: 'al:' + a.id, kind: 'alignment', x: p0.x, y: p0.y, sel: { kind: 'alignment', id: a.id },
-      label: t('cv.access.alignment', { name: nm(a, 'alignment'), from: formatStation(al.start, u), to: formatStation(al.end, u), len: num(al.length, 1), n: Math.max(0, a.pis.length - 2) }) });
+      label: t('cv.access.alignment', { name: nm(a, 'alignment'), from: formatStation(al.start, u), to: formatStation(al.display(al.end), u), len: num(al.length, 1), n: Math.max(0, a.pis.length - 2) }) });
   }
   for (const p of s.pads || []) {
     const c = centroid(p.pts);
@@ -79,9 +79,9 @@ export function sayHere(project, p, groundAt, t = tr) {
     const al = project.alignment(a);
     if (!al?.ok) continue;
     const so = al.stationOffset(p.x, p.y);
-    if (so && (!best || so.dist < best.so.dist)) best = { a, so };
+    if (so && (!best || so.dist < best.so.dist)) best = { a, al, so };
   }
-  if (best) s += ' ' + t(best.so.outside ? 'cv.access.staoff.out' : 'cv.access.staoff', { sta: formatStation(best.so.sta, project.state.units), off: num(Math.abs(best.so.off)), side: t(best.so.off >= 0 ? 'cv.access.right' : 'cv.access.left'), name: nm(best.a, 'alignment') });
+  if (best) s += ' ' + t(best.so.outside ? 'cv.access.staoff.out' : 'cv.access.staoff', { sta: formatStation(best.al.display(best.so.sta), project.state.units), off: num(Math.abs(best.so.off)), side: t(best.so.off >= 0 ? 'cv.access.right' : 'cv.access.left'), name: nm(best.a, 'alignment') });
   return s;
 }
 
@@ -93,7 +93,7 @@ export function alongStep(project, p, dir, step, selId, t = tr) {
   if (!best) return null;
   const sta = Math.max(best.al.start, Math.min(best.al.end, best.so.sta + dir * step));
   const q = best.al.pointAt(sta);
-  return q ? { x: q.x, y: q.y, text: t('cv.access.along', { name: nm(best.a, 'alignment'), sta: formatStation(sta, project.state.units) }) } : null;
+  return q ? { x: q.x, y: q.y, text: t('cv.access.along', { name: nm(best.a, 'alignment'), sta: formatStation(best.al.display(sta), project.state.units) }) } : null;
 }
 
 /** Hand CivilCraft's plan to the shell's keyboard explorer. Returns { update } or null when the build has no shell Access. */

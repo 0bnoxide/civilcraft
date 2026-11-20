@@ -120,7 +120,7 @@ export function planProfileSheets(scene, { alignment: al, eg = [], profile = nul
       const up = e1.y > e2.y ? e1 : e2, dn = up === e1 ? e2 : e1, ang = Math.atan2(up.y - dn.y, up.x - dn.x);
       const at = { x: dn.x + (up.x - dn.x) * 0.95, y: dn.y + (up.y - dn.y) * 0.95 };
       // along the line, just inside this sheet
-      texts.push({ color: INK, x: at.x + (sta === a ? 2.2 : -2.2), y: at.y, h: 2.2, rot: ang, align: 'right', middle: true, text: t('pp.match', { sta: formatStation(sta, units), sheet: other }) });
+      texts.push({ color: INK, x: at.x + (sta === a ? 2.2 : -2.2), y: at.y, h: 2.2, rot: ang, align: 'right', middle: true, text: t('pp.match', { sta: formatStation(al.display(sta), units), sheet: other }) });
     }
     // ---------------------------------------------------------------- the profile
     const pv = { strokes: [], texts: [], clip: { x0: VW.x0 - 15, y0: VW.y0 - 8, x1: VW.x1 + 15, y1: VW.y1 + 2 } };
@@ -131,9 +131,9 @@ export function planProfileSheets(scene, { alignment: al, eg = [], profile = nul
     const X = (sta) => VW.x0 + (sta - a) * s, Y = (z) => VW.y0 + (z - z0) * sv;
     const xEnd = X(b);
     const sStepRaw = 12 / s, sStep = [5, 10, 20, 25, 50, 100, 200, 500, 1000].find((v) => v >= sStepRaw) || 1000;
-    for (let st = Math.ceil(a / sStep - 1e-9) * sStep; st <= b + 1e-9; st += sStep) {
+    for (const { sta: st, show } of al.gridStations(sStep, a, b)) {   // Slice 1: at round displayed stations
       pv.strokes.push({ color: GRID, width: 0.1, pts: [{ x: X(st), y: VW.y0 }, { x: X(st), y: VW.y1 }] });
-      pv.texts.push({ color: INK, x: X(st), y: VW.y0 - 4, h: 1.8, rot: 0, align: 'center', text: formatStation(st, units, 0) });
+      pv.texts.push({ color: INK, x: X(st), y: VW.y0 - 4, h: 1.8, rot: 0, align: 'center', text: formatStation(show, units, 0) });
     }
     for (let z = z0; z <= z0 + zSpan + 1e-9; z += zStep) {
       const y = Y(z);
@@ -160,7 +160,7 @@ export function planProfileSheets(scene, { alignment: al, eg = [], profile = nul
       }
       for (const cv of profile.curves) {
         if (cv.pvi < a || cv.pvi > b) continue;
-        pv.texts.push({ color: INK, x: X(cv.pvi), y: Y(cv.zPvi) + (cv.kind === 'crest' ? 5 : -6), h: 1.8, rot: 0, align: 'center', text: t('pp.vc', { sta: formatStation(cv.pvi, units), z: fixed(cv.zPvi, 2), L: fixed(cv.L, 2), K: fixed(cv.K, 1) }) });
+        pv.texts.push({ color: INK, x: X(cv.pvi), y: Y(cv.zPvi) + (cv.kind === 'crest' ? 5 : -6), h: 1.8, rot: 0, align: 'center', text: t('pp.vc', { sta: formatStation(al.display(cv.pvi), units), z: fixed(cv.zPvi, 2), L: fixed(cv.L, 2), K: fixed(cv.K, 1) }) });
       }
     }
     if (band) {   // 0.7.1 71.26: each rail's height over the profile (left solid, right dashed), the curves' cant written
@@ -181,7 +181,7 @@ export function planProfileSheets(scene, { alignment: al, eg = [], profile = nul
     chrome.push({ color: INK, width: 0.25, pts: [{ x: PW.x0, y: PW.y0 }, { x: PW.x1, y: PW.y0 }, { x: PW.x1, y: PW.y1 }, { x: PW.x0, y: PW.y1 }], closed: true });
     const hLabel = scale.label, vLabel = units === 'm' ? '1:' + Math.round(1000 / sv) : '1" = ' + String(+(25.4 / sv).toFixed(1)) + "'";
     tt.push({ color: INK, x: MARGIN + 4, y: MARGIN + TITLE_H - 6, h: 4, rot: 0, align: 'left', text: title || name });
-    tt.push({ color: INK, x: MARGIN + 4, y: MARGIN + 3.5, h: 2.2, rot: 0, align: 'left', text: t('pp.strip', { name, a: formatStation(a, units), b: formatStation(b, units), h: hLabel, v: vLabel, vex: used }) });
+    tt.push({ color: INK, x: MARGIN + 4, y: MARGIN + 3.5, h: 2.2, rot: 0, align: 'left', text: t('pp.strip', { name, a: formatStation(al.display(a), units), b: formatStation(al.display(b), units), h: hLabel, v: vLabel, vex: used }) });
     tt.push({ color: INK, x: P.w - MARGIN - 4, y: MARGIN + TITLE_H - 6, h: 4, rot: 0, align: 'right', text: t('pp.sheet', { n: k + 1, N }) });
     tt.push({ color: INK, x: P.w - MARGIN - 4, y: MARGIN + 3.5, h: 2.2, rot: 0, align: 'right', text: t('pp.made', { date: new Date().toISOString().slice(0, 10) }) });
     // north arrow, turned with the plan

@@ -444,6 +444,12 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
     const st = root('IfcReferent', tag + '|sta', { Name: S(String(+a.start.toFixed(3))), ObjectPlacement: at(0), PredefinedType: '.STATION.' });
     pset([st], 'Pset_Stationing', [['Station', a.start, 'len']], tag + '|sta');
     refs.push(st); counts.referents++;
+    // Slice 1: each station equation as a STATION referent at its internal distance, the station ahead (Station) and back (IncomingStation)
+    (a.al.eqs || []).forEach((q, i) => {
+      const r = root('IfcReferent', tag + '|eq|' + i, { Name: S(String(+q.ahead.toFixed(3))), ObjectPlacement: at(q.internal - a.start), PredefinedType: '.STATION.' });
+      pset([r], 'Pset_Stationing', [['Station', q.ahead, 'len'], ['IncomingStation', a.al.eqBack(i), 'len']], tag + '|eq|' + i);
+      refs.push(r); counts.referents++;
+    });
     a.superEvents.forEach((e, k) => {
       for (const [side, v] of [['LEFT', e.L], ['RIGHT', e.R]]) {
         const r = root('IfcReferent', tag + '|se|' + k + side, { Name: S(side + ' ' + (+e.sta.toFixed(3))), ObjectPlacement: at(e.sta - a.start), PredefinedType: '.SUPERELEVATIONEVENT.' });

@@ -5,7 +5,7 @@
  * the balanced stretches with the volume moved, its direction and the average haul, what is left over, and a CSV.
  * The numbers are masshaul.js's (bin/test-civilcraft-masshaul.mjs).
  *
- *   massHaulDialog(ctx, a, set)   ctx = { root, el, units: () => 'ft'|'m', download(bytes, name, type), fileStem(), say }
+ *   massHaulDialog(ctx, a, set)   ctx = { root, el, units: () => 'ft'|'m', download(bytes, name, type), fileStem(), say, al? }
  *   drawMassHaul(canvas, res, { units, station })
  */
 
@@ -25,7 +25,7 @@ export function massHaulDialog(ctx, a, set) {
   const facts = el('div', { 'aria-live': 'polite', 'data-mh-facts': '' });
   const csv = el('button', { type: 'button', className: 'btn-line btn-sm-cc', 'data-mh-csv': '' }, el('i', { className: 'bi bi-download', 'aria-hidden': 'true' }), ' CSV');
   const close = el('button', { type: 'button', className: 'cv-x', 'aria-label': t('tv.close') }, el('i', { className: 'bi bi-x-lg', 'aria-hidden': 'true' }));
-  const station = (s) => formatStation(s, U);
+  const station = (s) => formatStation(ctx.al?.display ? ctx.al.display(s) : s, U);   // Slice 1: ctx.al = the alignment (station equations)
   const vol = (v) => fixed(v / uo.volPer, 1) + ' ' + uo.vol;
   let res = null;
   function update() {

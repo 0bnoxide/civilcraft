@@ -966,7 +966,7 @@ function init(root) {
     ui.profFl.setAttribute('aria-pressed', String(!!ds.profFeatures));
     if (document.activeElement !== ui.profWithin) ui.profWithin.value = ds.profWithin ? String(ds.profWithin) : '';
     ui.profWithin.disabled = !ds.profFeatures;
-    pview.set({ key: a.id + '|' + project.version, align: a.id, snap: profSnap && profSnap.kind !== 'free' ? profSnap : null, eg: project.egProfile(a), profile: prof, pvis, start: al.start, end: al.end, units: units(), sel: selPvi, hover: pvHover, cursor: profCursor,
+    pview.set({ key: a.id + '|' + project.version, align: a.id, snap: profSnap && profSnap.kind !== 'free' ? profSnap : null, eg: project.egProfile(a), profile: prof, pvis, start: al.start, end: al.end, units: units(), disp: (x) => al.display(x), grid: (st, f, e) => al.gridStations(st, f, e), sel: selPvi, hover: pvHover, cursor: profCursor,
       features, featSel: sel?.kind === 'feature' ? sel.id : null, cant: project.railPlan(a) });   // cant: 0.7.1 71.26
   }
   ui.profFl.addEventListener('click', () => { project.setDisplay('profFeatures', !project.state.display.profFeatures); renderProfile(); });
@@ -1029,7 +1029,7 @@ function init(root) {
         const prev = pa.pvis[pk.i - 1], next = pa.pvis[pk.i + 1];
         const sta = Math.max(prev ? prev.sta + 0.01 : al0.start, Math.min(next ? next.sta - 0.01 : al0.end, Number(q.sta.toFixed(2)))), z = Number(q.z.toFixed(2));
         project.change(t(pk.field === 'sta' ? 'cv.undo.pvi.sta' : 'cv.undo.pvi.z'), () => { const v = findAl(pk.id).pvis[pk.i]; if (pk.field === 'sta') v.sta = sta; else v.z = z; });
-        say(t(pk.field === 'sta' ? 'cv.pvi.picked.sta' : 'cv.pvi.picked.z', { n: pk.i + 1, v: pk.field === 'sta' ? formatStation(sta, units()) : fixed(z, 2) }));
+        say(t(pk.field === 'sta' ? 'cv.pvi.picked.sta' : 'cv.pvi.picked.z', { n: pk.i + 1, v: pk.field === 'sta' ? formatStation(al0.display(sta), units()) : fixed(z, 2) }));
       }
       endPviPick(); renderProps();
       return;
@@ -1048,11 +1048,11 @@ function init(root) {
     if (ui.pviAdd.getAttribute('aria-pressed') === 'true') {
       const al = project.alignment(a); const d = profPoint(sx, sy, a, -1, e.altKey);   // CV.3: snaps (Alt = free)
       const sta = Math.max(al.start, Math.min(al.end, Number(d.sta.toFixed(2)))), z = Number(d.z.toFixed(2));
-      if (a.pvis.some((v) => Math.abs(v.sta - sta) < 0.01)) { say(t('cv.pvi.exists', { sta: formatStation(sta, units()) })); return; }
+      if (a.pvis.some((v) => Math.abs(v.sta - sta) < 0.01)) { say(t('cv.pvi.exists', { sta: formatStation(al.display(sta), units()) })); return; }
       project.change(t('cv.undo.pvi.add'), () => { const p = findAl(a.id).pvis; p.push({ sta, z, L: 0 }); p.sort((m, n) => m.sta - n.sta); });
       selPvi = findAl(a.id).pvis.findIndex((v) => v.sta === sta);
       renderProps(); renderProfile();
-      say(t('cv.pvi.added', { sta: formatStation(sta, units()), z: fixed(z, 2) }));
+      say(t('cv.pvi.added', { sta: formatStation(al.display(sta), units()), z: fixed(z, 2) }));
     } else { selPvi = -1; renderProps(); renderProfile(); }
   });
   ui.prof.addEventListener('pointermove', (e) => {
@@ -1070,7 +1070,7 @@ function init(root) {
       v.z = Number(q.z.toFixed(2));
       pvDrag.prof = buildProfileLive(pvDrag.pvis);
       renderProfile();
-      ui.profRead.textContent = t('cv.prof.read.pvi', { sta: formatStation(v.sta, units()), z: fixed(v.z, 2) });
+      ui.profRead.textContent = t('cv.prof.read.pvi', { sta: formatStation(al.display(v.sta), units()), z: fixed(v.z, 2) });
       return;
     }
     const h = pview.hitPvi(sx, sy);
@@ -1081,7 +1081,7 @@ function init(root) {
     if (h !== pvHover || snapChanged) { pvHover = h; renderProfile(); }
     const sta = Math.max(al.start, Math.min(al.end, d.sta));
     const egz = interpEg(project.egProfile(a), sta), prof = project.designProfile(a), fg = prof.ok ? prof.elevationAt(sta) : null;
-    const read = [t('cv.read.sta', { sta: formatStation(sta, units()) })];
+    const read = [t('cv.read.sta', { sta: formatStation(al.display(sta), units()) })];
     if (egz !== null) read.push(t('cv.read.ground', { z: fixed(egz, 2) }));
     if (fg !== null) read.push(t('cv.read.design', { z: fixed(fg, 2) }), t('cv.read.grade', { g: pct(prof.gradeAt(sta)) }), t(fg - egz >= 0 ? 'cv.read.fill' : 'cv.read.cut', { d: fixed(Math.abs(fg - egz), 2) }));
     ui.profRead.textContent = read.join(' · ');
@@ -1932,7 +1932,7 @@ function init(root) {
     }
     const al = a && project.alignment(a);
     const so = al?.ok ? al.stationOffset(cursor.x, cursor.y) : null;
-    ui.staoff.textContent = so ? t(so.outside ? 'cv.status.staoff.out' : 'cv.status.staoff', { name: a.name, sta: formatStation(so.sta, units()), off: fixed(Math.abs(so.off), 2), side: t(so.off >= 0 ? 'cv.side.r' : 'cv.side.l') }) : '';
+    ui.staoff.textContent = so ? t(so.outside ? 'cv.status.staoff.out' : 'cv.status.staoff', { name: a.name, sta: formatStation(al.display(so.sta), units()), off: fixed(Math.abs(so.off), 2), side: t(so.off >= 0 ? 'cv.side.r' : 'cv.side.l') }) : '';
   }
   let sayTimer = 0;
   function say(msg) { ui.status.textContent = msg; clearTimeout(sayTimer); sayTimer = setTimeout(() => { if (ui.status.textContent === msg) ui.status.textContent = ''; }, 12000); }
