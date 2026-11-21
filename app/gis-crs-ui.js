@@ -75,20 +75,32 @@ export function install(host) {
   });
 
   // ---------------------------------------------------------------- the dialog
-  let openNow = null;
+  // Show one dialog at a time and give each request its own result.
+  let afterDialog = Promise.resolve();
   function openDialog(opts) {
-    if (openNow) return openNow;
-    openNow = new Promise((resolve) => runDialog(opts, resolve)).finally(() => { openNow = null; });
-    return openNow;
+    const project = host.project, generation = project.documentGeneration;
+    const current = () => host.project === project && project.documentGeneration === generation;
+    const result = afterDialog.then(() => {
+      if (!current()) return null;
+      return new Promise((resolve) => runDialog(opts, resolve, current));
+    }).then((value) => current() ? value : null);
+    afterDialog = result.catch(() => null);
+    return result;
   }
 
-  function runDialog({ mode, reason = '', near = null, purpose = 'project', prjFile = null }, resolve) {
+  function runDialog({ mode, reason = '', near = null, purpose = 'project', prjFile = null }, resolve, ownsDocument) {
     const p = host.project, s = p.state, id = 'cv-crs-' + (++uid);
     const pick = mode === 'pick';
     const forProject = !pick || purpose !== 'source';
     let current = s.crs;   // (0.4 V11: a grid added in the dialog changes it)
     let chosen = !pick && current ? { crs: { ...current, local: null }, entry: current.code != null ? safeByCode(current.code) : null, notes: [] } : null;
     let done = false, picking = null;
+    function ensureCurrent() {
+      if (done) return false;
+      if (ownsDocument()) return true;
+      finish(null);
+      return false;
+    }
 
     // the project's middle (for "fits" and for the ground factor) and where it is, when that is known
     const ext = host.extentsAll();
@@ -188,8 +200,10 @@ export function install(host) {
       gridSec.replaceChildren(...kids);
     }
     async function useGrid(name, bytes) {
+      if (!ensureCurrent()) return;
       let info;
-      try { info = await loadGrid(name, bytes); } catch (e) { renderGrid(e.message, true); return; }
+      try { info = await loadGrid(name, bytes); } catch (e) { if (ensureCurrent()) renderGrid(e.message, true); return; }
+      if (!ensureCurrent()) return;
       const before = current;
       p.crsGrids.set(info.name, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
       p.change(t('grid.undo.on'), (st) => { st.crs = { ...st.crs, grid: info.name }; });
@@ -201,7 +215,7 @@ export function install(host) {
     }
     gridSec.addEventListener('click', async (e) => {
       const b = e.target.closest('button');
-      if (!b) return;
+      if (!b || !ensureCurrent()) return;
       if (b.dataset.gridFile !== undefined) gridIn.click();
       else if (b.dataset.gridOff !== undefined) {
         const before = current;
@@ -216,13 +230,13 @@ export function install(host) {
           const r = await fetch(GRID_CDN + name);
           if (!r.ok) throw new Error(t('grid.fetch.http', { status: r.status }));
           await useGrid(name, new Uint8Array(await r.arrayBuffer()));
-        } catch (err) { renderGrid(t('grid.fetch.fail', { msg: err.message }), true); }
+        } catch (err) { if (ensureCurrent()) renderGrid(t('grid.fetch.fail', { msg: err.message }), true); }
       }
     });
     gridIn.addEventListener('change', async () => {
       const f = gridIn.files?.[0];
       gridIn.value = '';
-      if (!f) return;
+      if (!f || !ensureCurrent()) return;
       if (f.size > 20 * 1024 * 1024) { renderGrid(t('grid.big'), true); return; }
       await useGrid(f.name, new Uint8Array(await f.arrayBuffer()));
     });
@@ -502,6 +516,7 @@ export function install(host) {
 
     // ---------------- apply
     async function apply() {
+      if (!ensureCurrent()) return;
       if (pick) {
         if (!chosen) return;
         const prob = forProject ? crsProblem(chosen.crs, units()) : null;
@@ -525,7 +540,7 @@ export function install(host) {
           text: t('crs.d.ask.text', { old: current.name, crs: base.name }),
           buttons: [['cancel', t('vec.cancel'), 'btn-line'], ['convert', t('crs.d.ask.convert'), 'btn-line'], ['yes', t('crs.d.ask.yes'), 'btn-plot']],
         });
-        if (ans === 'cancel') return;
+        if (!ensureCurrent() || ans === 'cancel') return;
         convert = ans === 'convert';
       }
       const before = current;
@@ -553,6 +568,7 @@ export function install(host) {
       finish(next);
     }
     async function removeSystem() {
+      if (!ensureCurrent()) return;
       const before = current;
       p.change(t('crs.d.undo.remove'), (st) => { st.crs = null; });
       for (const f of reg.crsChange) { try { f(before, null, { converted: false }); } catch (e) { console.warn(e); } }
