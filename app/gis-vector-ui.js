@@ -13,7 +13,7 @@
  *   pick / props / overlay   a click with Select picks a feature; Properties shows its attributes (read-only) and layer
  *   onProject the GIS layers section of the left panel ([data-gis-layers]) follows the open project
  *   crsChange after the project's system changes, offers to move the layers to the new system
- *   pointsLatLon(points, fileName) → { points, crs, note } | null   point files with latitude/longitude columns
+ *   pointsLatLon(points, fileName, isCurrent) → { points, crs, note } | null   point files with latitude/longitude columns
  *   landxmlCrs(cs, fileName, project)    a LandXML <CoordinateSystem> offered for the project that opened it
  *   exportExtra  [(container) => void]: other parts fill the GIS › Export dialog's extra spot ([data-gis-export-extra];
  *             builder B's GeoTIFF section goes in its [data-gis-geotiff] child)
@@ -417,14 +417,14 @@ export async function install(host) {
   });
 
   // ---------------------------------------------------------------- latitude/longitude point files, LandXML systems
-  reg.pointsLatLon = async (points, name) => {
-    const s = P().state;
+  reg.pointsLatLon = async (points, name, isCurrent = () => true) => {
+    const project = P(), generation = project.documentGeneration, s = project.state;
     let crs = s.crs, set = null;
     if (!crs) {
       const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
       const near = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
       crs = await askCrs({ reason: t('vec.latlon.reason', { file: name }), near, purpose: 'project' });
-      if (!crs) return null;
+      if (!crs || P() !== project || project.documentGeneration !== generation || !isCurrent()) return null;
       const why = crsProblem(crs, s.units);
       if (why) { host.say(why); return null; }
       set = crs;

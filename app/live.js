@@ -296,6 +296,7 @@ export function createLive(getProject) {
       p.undoStack = []; p.redoStack = [];
       p.cache?.clear?.();
       claimIds();
+      p.documentGeneration++;
       p.version++; p.emit('load');
     },
     hash() { const d = doc(); delete d.state.seq; return canonical(d); },

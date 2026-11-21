@@ -198,6 +198,7 @@ export class Project {
     this.shell = {};   // 0.8 round 3: the shell's calc sheets and design reasons (shell-mount.js), outside the snapshots; saved as `shell`
     this.undoStack = []; this.redoStack = [];
     this.version = 0; this.saved = 0;
+    this.documentGeneration = 0;   // Studio Live can replace the document within this Project.
     this.cache = new Map();
     this.listeners = new Set();
   }

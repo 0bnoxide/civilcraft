@@ -162,12 +162,23 @@ export function mountFiles(ctx) {
     parse();
     $d('[data-imp-format]').onchange = parse;
     $d('[data-imp-ok]').onclick = async () => {
+      const project = ctx.project, generation = project.documentGeneration;
+      const { units, crs, foot } = project.state;
+      const unit = footOf(units, crs, foot), crsKey = JSON.stringify(crs ?? null);
+      const current = () => {
+        if (ctx.project !== project || project.documentGeneration !== generation) return false;
+        const s = project.state;
+        // A Live edit can rebuild state without changing the coordinate inputs.
+        return footOf(s.units, s.crs, s.foot) === unit && JSON.stringify(s.crs ?? null) === crsKey;
+      };
       dlg.close('ok');
       // GIS: latitude/longitude → project coordinates through the project's system, or one picked now (gis-vector-ui.js)
       let pts = res.points, llNote = '', llCrs = null;
       if (res.latlon) {
         try { await gisLoad(); } catch { return; }
-        const r = ctx.gisReg.pointsLatLon ? await ctx.gisReg.pointsLatLon(res.points, name) : null;
+        if (!current()) return;
+        const r = ctx.gisReg.pointsLatLon ? await ctx.gisReg.pointsLatLon(res.points, name, current) : null;
+        if (!current()) return;
         if (!r) { say(t('cv.imp.latlon.need', { file: name })); return; }
         pts = r.points; llNote = ' ' + r.note; llCrs = r.crs;
       }
@@ -175,19 +186,22 @@ export function mountFiles(ctx) {
       // none is asked about before the points go in (the shell's one dialog, remembered per file). It was read in project units, unasked.
       let unitNote = '';
       if (!res.latlon && globalThis.ccImportUnits) {
-        const s0 = ctx.project.state, IU = globalThis.ccImportUnits, pu = s0.units === 'm' ? 'm' : footOf(s0.units, s0.crs, s0.foot) === 'ft' ? 'ft' : 'usft';   // Slice 2: the project's own foot
-        const a = await IU.resolve({ file: name, format: t('cv.imp.unitformat'), stated: IU.statedInText(text) || ownUnit, choices: ['ft', 'usft', 'm'], suggest: pu, say });
-        if (!a) return;
+        const IU = globalThis.ccImportUnits, pu = unit === 'ftUS' ? 'usft' : unit;
+        const a = await IU.resolve({
+          file: name, format: t('cv.imp.unitformat'), stated: IU.statedInText(text) || ownUnit, choices: ['ft', 'usft', 'm'], suggest: pu,
+          say: (message) => { if (current()) say(message); },
+        });
+        if (!current() || !a) return;
         const k = IU.MM_PER[a.unit] / IU.MM_PER[pu];
         if (Math.abs(k - 1) > 1e-12) pts = pts.map((p) => ({ ...p, x: p.x * k, y: p.y * k, z: p.z === null || p.z === undefined ? p.z : p.z * k }));
         unitNote = ' ' + a.text;
       }
-      const replacing = ctx.project.points.length;
-      ctx.project.state.surface.tin = null;
-      if (!ctx.project.points.length && !ctx.project.state.alignments.length && ctx.project.state.name === t('project.untitled')) ctx.project.state.name = name.replace(/\.[^.]+$/, '').slice(0, 120);
+      const s = project.state, replacing = project.points.length;
+      s.surface.tin = null;
+      if (!replacing && !s.alignments.length && s.name === t('project.untitled')) s.name = name.replace(/\.[^.]+$/, '').slice(0, 120);
       ctx.lastReport = null;
-      if (llCrs) { const before = ctx.project.state.crs; ctx.project.state.crs = llCrs; for (const f of ctx.gisReg.crsChange) f(before, llCrs); }   // GIS
-      ctx.project.setPoints(pts, name);
+      if (llCrs) { const before = s.crs; s.crs = llCrs; for (const f of ctx.gisReg.crsChange) f(before, llCrs); }   // GIS
+      project.setPoints(pts, name);
       ctx.sel = null; ctx.selPvi = -1; ctx.picked.clear();
       refresh(); fitAll();
       const sf = ctx.eg().surface;
