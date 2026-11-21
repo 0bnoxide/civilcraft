@@ -25,6 +25,7 @@ const I18N = await mod('i18n.js');
 I18N.init({ strings: JSON.parse(fs.readFileSync(path.join(APP, 'lang/en.json'), 'utf8')) });
 const t = I18N.t;
 const LX = await mod('landxml.js'), PJ = await mod('project.js'), AG = await mod('civil-agent.js');
+const LV = await mod('live.js'), CP = await mod('crs-pick.js');
 
 let pass = 0, fail = 0;
 const ok = (c, m, x) => { if (c) { pass++; if (VERBOSE) console.log('  ok   ' + m); } else { fail++; console.log('  FAIL ' + m + (x !== undefined ? ' — ' + JSON.stringify(x).slice(0, 400) : '')); } };
@@ -119,9 +120,28 @@ try {
   ok(h.state.moreSurfaces.length === 1, 'redo removes it again');
   h.undo();
   ok(h.state.moreSurfaces[0].tin?.faces.length === 8 && JSON.stringify(names(LX.readLandXml(exportOf(h)))) === JSON.stringify(['EG', 'FG Top', 'Datum']), 'and undo again restores it, TIN and export');
+  const base = JSON.parse(JSON.stringify(h.toJSON()));
   h.removeOtherSurface(h.state.moreSurfaces[0].id); h.removeOtherSurface(h.state.moreSurfaces[0].id);
   ok(!('moreSurfaces' in h.state) && !('moreSurfaces' in h.toJSON()), 'removing the last leaves no list behind');
   ok(h.removeOtherSurface('ts999') === false, 'no such surface → false');
+
+  section('Studio Live and coordinate conversion');
+  {
+    const q = PJ.Project.fromJSON(JSON.parse(JSON.stringify(base))).project;
+    const live = LV.createLive(() => q), sent = [];
+    const client = { on() {}, undoStack: [], redoStack: [], localChange(x) { sent.push(x); this.undoStack.push(x); },
+      undo() { const x = this.undoStack.pop(); if (!x) return false; live.apply(x.inverse); this.redoStack.push(x); return true; },
+      redo() { const x = this.redoStack.pop(); if (!x) return false; live.apply(x.ops); this.undoStack.push(x); return true; } };
+    live.bind(client);
+    ok(q.removeOtherSurface(q.state.moreSurfaces[0].id) && sent.length === 1 && JSON.stringify(sent[0].ops).includes('moreSurfaces') && !JSON.stringify(sent[0].ops).includes('2994'), 'a removal in Live is sent to the others (without the TIN)', sent.map((x) => x.ops.length));
+    q.undo();
+    ok(q.state.moreSurfaces.length === 2 && q.state.moreSurfaces[0].tin?.faces.length === 8, "Live's undo brings it back with its TIN", q.state.moreSurfaces.map((x) => [x.name, x.tin?.faces?.length]));
+    q.redo(); q.undo();
+    ok(q.state.moreSurfaces[0].tin?.faces.length === 8 && JSON.stringify(names(LX.readLandXml(exportOf(q)))) === JSON.stringify(['EG', 'FG Top', 'Datum']), 'and again after a redo, TIN and export');
+    live.unbind();
+    const r = CP.reprojectProject(q.state, q.points, (x, y) => [x + 1, y + 1]);
+    ok(r.refused === t('crs.reproject.tin') && r.moved === 0, 'converting coordinates is refused while another surface holds a TIN from the file', r);
+  }
 
   section('ids');
   const n0 = back.nextId('x');

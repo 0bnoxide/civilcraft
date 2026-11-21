@@ -106,8 +106,8 @@ export const MAX_MORE_PROFILES = 20;
 export const MAX_MORE_SURFACES = 10;
 /** Slice 3: the other surfaces without their TINs (the TINs stay out of the history and of Live snapshots, as surface.tin does). */
 const surfsLight = (list) => list.map(({ tin, ...x }) => x);
-/** …and with them again: each takes the TIN the state holds for its id now. */
-const surfsWithTins = (list, from) => list.map((x) => ({ ...x, tin: (from || []).find((y) => y.id === x.id)?.tin ?? null }));
+/** …and with them again: each takes the TIN the state holds for its id now, else the one the project kept for that id (a removed surface brought back by an undo, here or in Live). */
+const surfsWithTins = (list, from, kept) => list.map((x) => ({ ...x, tin: (from || []).find((y) => y.id === x.id)?.tin ?? kept?.get(x.id) ?? null }));
 
 // profFeatures / profWithin (0.5 WL.20): feature lines in the profile view — their crossings, and (within > 0) the lines running
 // alongside within that distance of the centerline; gradeOverlay (0.5 WL.21): grades and elevations along feature lines, screen only
@@ -183,7 +183,9 @@ export function recoverText(rec) {
 
 export class Project {
   constructor() {
-    this.h = new ChunkHistory({ spec: HISTORY_SPEC, limit: MAX_UNDO });   // the table of chunks the undo steps are made against
+    this.surfTins = new Map();   // Slice 3: id → TIN of every other surface this project has held (TINs stay out of the history; an undo of a removal takes it from here)
+    const revive = (k, v, s) => (k === 'k:moreSurfaces' ? (this.keepSurfTins(s), surfsWithTins(v, s.moreSurfaces, this.surfTins)) : HISTORY_SPEC.revive(k, v, s));
+    this.h = new ChunkHistory({ spec: { ...HISTORY_SPEC, revive }, limit: MAX_UNDO });   // the table of chunks the undo steps are made against
     this.state = emptyState();
     this.points = [];
     this.pointsFile = '';
@@ -214,7 +216,9 @@ export class Project {
   // ---- edits ----
   // display settings are not undo steps: they stay as they are through undo/redo
   snapshot() { const { tin, ...surf } = this.state.surface; const { display, ...rest } = this.state; return JSON.stringify({ ...rest, surface: surf, ...(rest.moreSurfaces ? { moreSurfaces: surfsLight(rest.moreSurfaces) } : {}) }); }
-  restore(json) { const s = JSON.parse(json); s.surface.tin = this.state.surface.tin; if (s.moreSurfaces) s.moreSurfaces = surfsWithTins(s.moreSurfaces, this.state.moreSurfaces); s.display = this.state.display; this.state = s; }
+  /** Slice 3: remember the TIN of every other surface the state holds now (a change from Studio Live may remove one, and its undo bring it back). */
+  keepSurfTins(state = this.state) { for (const x of state.moreSurfaces || []) if (x.tin) this.surfTins.set(x.id, x.tin); }
+  restore(json) { const s = JSON.parse(json); s.surface.tin = this.state.surface.tin; this.keepSurfTins(); if (s.moreSurfaces) s.moreSurfaces = surfsWithTins(s.moreSurfaces, this.state.moreSurfaces, this.surfTins); s.display = this.state.display; this.state = s; }
   setDisplay(k, v) { if (this.state.display[k] === v) return; this.state.display[k] = v; this.touch('display'); }
   /** An undo step: `rec` the chunks the edit changed (before and after); `json` (live.js) the state's JSON before the step, for the newest step. */
   stepOf(label, rec, extra = {}) {
@@ -300,9 +304,8 @@ export class Project {
   step(from, to, kind) {
     const u = from.pop(); if (!u) return null;
     const redoing = from === this.redoStack;
-    to.push(this.stepOf(u.label, u.rec, { pts: u.pts ? this.points : undefined, gis: u.gis ? this.gisFeatures : undefined, ...(u.tinSet ? { tin: this.state.surface.tin, tinSet: true } : {}), ...(u.surfTins ? { surfTins: u.surfTins } : {}) }));
+    to.push(this.stepOf(u.label, u.rec, { pts: u.pts ? this.points : undefined, gis: u.gis ? this.gisFeatures : undefined, ...(u.tinSet ? { tin: this.state.surface.tin, tinSet: true } : {}) }));
     if (u.rec) this.h.restore(this.state, redoing ? u.rec.redo : u.rec.undo);
-    if (u.surfTins) for (const x of this.state.moreSurfaces || []) if (!x.tin && u.surfTins.has(x.id)) x.tin = u.surfTins.get(x.id);   // Slice 3: a removed surface comes back with its TIN
     if (u.tinSet) { this.state.surface.tin = u.tin; this.cache.clear(); }   // 0.4 V9
     if (u.pts) { this.points = u.pts; this.pointsVersion++; }
     if (u.gis) { this.gisFeatures = u.gis; this.gisVersion++; }
@@ -406,19 +409,15 @@ export class Project {
       return { id: x.id, name: x.name, desc: x.desc || '', surface: b.surface, breaklines: x.breaklines || [], boundary: x.boundary || null };
     });
   }
-  /** Slice 3: drop one of the other surfaces; one undo step that keeps its TIN (TINs stay out of the history). */
+  /** Slice 3: drop one of the other surfaces, as an ordinary change (so Studio Live sends it); its TIN stays in surfTins for an undo. */
   removeOtherSurface(id) {
     const x = (this.state.moreSurfaces || []).find((y) => y.id === id);
     if (!x) return false;
-    try {
-      this.state.moreSurfaces = this.state.moreSurfaces.filter((y) => y.id !== id);
-      if (!this.state.moreSurfaces.length) delete this.state.moreSurfaces;
-    } catch (e) { this.h.rollback(this.state); throw e; }
-    const rec = this.h.capture(this.state);
-    if (!rec) return false;
-    this.pushStep(this.stepOf(t('cv.undo.surf.remove', { name: x.name }), rec, { surfTins: new Map([[x.id, x.tin]]) }));
-    this.touch('change');
-    return true;
+    this.keepSurfTins();
+    return this.change(t('cv.undo.surf.remove', { name: x.name }), (s) => {
+      s.moreSurfaces = s.moreSurfaces.filter((y) => y.id !== id);
+      if (!s.moreSurfaces.length) delete s.moreSurfaces;
+    });
   }
   designProfileName(a) { return a.profName || t('cv.lx.design', { name: a.name }); }   // Slice 3: the source's name for it, else "<alignment> design"
   /** Slice 3: the alignment's other design profiles, built (kept for export; not graded). */
