@@ -11,7 +11,7 @@
  *
  * Steps: (1) the libraries the app and its tests use, by exact version (devshell/fetch-vendor.mjs, sha256-checked);
  * (2) .cc-test/ — a copy of tests/ laid out like the getcadcraft.com repo the tests were written in, with the app,
- * the libraries, the shared shell and fixtures/ linked in, so the tests run unchanged; (3) npm packages a test folder
+ * its released build (apps/<slug>/current), the libraries, the shared shell and fixtures/ linked in, so the tests run unchanged; (3) npm packages a test folder
  * declares (tools/<x>/package.json, installed once into .cc-test) and Python packages (tools/<x>/requirements.txt →
  * tools/<x>/venv; --no-python skips); (4) each test file in turn; a summary; exit 1 if any failed. LibreOffice and the
  * ODA converter are not installed here: the tests say what they skip.
@@ -77,8 +77,35 @@ export function buildMirror() {
     try { fs.rmSync(cur, { recursive: true, force: true }); } catch {}
     link(path.join(path.dirname(cur), v.version), cur);
   }
+  released(path.join(MIRROR, 'public_html/assets/apps', SLUG));
   if (fs.existsSync(path.join(ROOT, 'fixtures'))) link(path.join(ROOT, 'fixtures'), path.join(MIRROR, 'fixtures'));
   fs.mkdirSync(path.join(MIRROR, 'tmp'), { recursive: true });
+}
+
+/**
+ * The released build, as on the site: apps/<slug>/<version>/ and current → "<version>". Some checks open a file the released
+ * build saved (older files open and save as before). It is the app/ folder at the release's commit, taken from git; without
+ * that commit (a shallow clone, --offline) it is not made, and those checks fail saying so.
+ */
+const RELEASED = { version: '0.10.0', commit: 'a42acd54812f4b763e6a4710e979795e3cb5b94c' };
+function released(appsDir) {
+  const dir = path.join(appsDir, RELEASED.version), cur = path.join(appsDir, 'current');
+  const git = (a, o = {}) => spawnSync('git', a, { cwd: ROOT, encoding: 'buffer', maxBuffer: 1 << 30, ...o });
+  if (!fs.existsSync(path.join(dir, 'manifest.json'))) {
+    let have = git(['cat-file', '-e', RELEASED.commit + '^{commit}']).status === 0;
+    if (!have && !OFFLINE) have = git(['fetch', '-q', '--depth', '1', 'origin', RELEASED.commit], { stdio: 'inherit' }).status === 0;
+    if (!have) { console.log(`released build ${RELEASED.version}: commit ${RELEASED.commit.slice(0, 8)} not in this clone, not made`); return; }
+    const tar = git(['archive', '--format=tar', RELEASED.commit, 'app']);
+    if (tar.status !== 0) { console.log(`released build ${RELEASED.version}: git archive failed`); return; }
+    const tmp = fs.mkdtempSync(path.join(MIRROR, 'tmp-rel-'));
+    const x = spawnSync('tar', ['-x', '-C', tmp], { input: tar.stdout });
+    if (x.status !== 0) { fs.rmSync(tmp, { recursive: true, force: true }); console.log(`released build ${RELEASED.version}: tar failed`); return; }
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    fs.renameSync(path.join(tmp, 'app'), dir);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  link(dir, cur);
 }
 
 function npmInstall() {

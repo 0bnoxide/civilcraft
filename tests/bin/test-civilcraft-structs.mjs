@@ -90,7 +90,7 @@ const items = {};
   // BimCraft's libitem.js (the canonical item rules) and the site's checks are not in CivilCraft's public repo: skipped there
   const LIB = path.join(REPO, 'public_html/assets/apps/bimcraft/dev/libitem.js');
   const LI = fs.existsSync(LIB) ? await import(pathToFileURL(LIB).href) : null;
-  if (!LI) console.log('  (no BimCraft libitem.js in this checkout: the library item rules are checked on the site only)');
+  if (!LI) console.log('  (no BimCraft libitem.js in this checkout: the library item rules and Library\'s converter are checked on the site only)');
   for (const [id, it] of Object.entries(items)) {
     if (LI) {
       const v = LI.validateItem(it, { partial: true });
@@ -118,7 +118,7 @@ const items = {};
     ok(res.length === 2 && res.every((r) => r.ok === true || (Array.isArray(r) && !r.length) || r.errors?.length === 0), 'PHP LibraryItemFormat::validate (partial) accepts both', res);
   } catch (e) { console.log('  (PHP validator not run: ' + String(e.message).split('\n')[0] + ')'); }
   // the server's converter, kind "item"
-  for (const id of fs.existsSync(path.join(REPO, 'tools/library/convert.mjs')) ? Object.keys(items) : []) {
+  for (const id of LI && fs.existsSync(path.join(REPO, 'tools/library/convert.mjs')) ? Object.keys(items) : []) {   // the converter imports libitem.js
     const o = JSON.parse(execFileSync('node', [path.join(REPO, 'tools/library/convert.mjs'), path.join(OUT, id + '.item.json'), path.join(OUT, 'conv-' + id)], { encoding: 'utf8' }));
     ok(o.ok && o.items?.length === 1 && fs.existsSync(o.items[0].preview || path.join(path.dirname(o.items[0].path), 'preview.svg')), id + ': Library\'s converter takes it as an item and draws its preview', o);
   }

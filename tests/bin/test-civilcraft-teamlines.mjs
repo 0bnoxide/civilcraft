@@ -68,8 +68,11 @@ const helper = path.join(REPO, 'tools/civilcraft-test/teamlines-helper.php');
 const wwwdata = (args) => execFileSync('sudo', ['-u', 'www-data', ...args], { cwd: REPO, encoding: 'utf8', maxBuffer: 1 << 24 });
 let server = null, fx = null;
 const cleanup = () => { try { server?.kill(); } catch { /* gone */ } try { wwwdata(['php', helper, 'down']); } catch { /* nothing to remove */ } };
-process.on('exit', cleanup);
-try {
+// the site's server (public_html/core: the API, its database) is not in CivilCraft's public repo: these checks run on the site only
+const SITE = fs.existsSync(path.join(REPO, 'public_html/core/bootstrap.php'));
+if (!SITE) console.log('\n  (no getcadcraft.com server in this checkout: the checks over HTTP are run on the site only)');
+else process.on('exit', cleanup);
+if (SITE) try {
   fx = JSON.parse(wwwdata(['php', helper, 'up']));
   const PORT = 18000 + Math.floor(Math.random() * 1500);
   server = spawn('sudo', ['-u', 'www-data', 'php', '-S', '127.0.0.1:' + PORT, '-t', path.join(REPO, 'public_html'), path.join(REPO, 'tools/civilcraft-test/teamlines-router.php')], { cwd: REPO, stdio: 'ignore' });

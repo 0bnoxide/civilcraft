@@ -39,7 +39,9 @@ const SR = await mod('sunhours-run.js');
 const IM = await mod('ifc-massing.js');
 const UIS = [await mod('massing-ui.js'), await mod('sunhours-ui.js')];   // loaded, so a syntax slip in the screens shows here and not first in a browser
 const IFCLIB = await import(pathToFileURL(path.join(REPO, 'lib/ifc/api.js')).href);
-const GEO = await import(pathToFileURL(path.join(REPO, 'public_html/assets/apps/bimcraft/dev/ifc-geo.js')).href);
+// BimCraft's IFC georeference reader is not in CivilCraft's public repo: the checks that place the file with it run on the site only
+const GEOF = path.join(REPO, 'public_html/assets/apps/bimcraft/dev/ifc-geo.js');
+const GEO = fs.existsSync(GEOF) ? await import(pathToFileURL(GEOF).href) : null;
 const DRV = await mod('drive.js');
 const PC = await mod('parcels.js');
 const FL = await mod('featureline.js');
@@ -354,6 +356,7 @@ section('the screens load');
 ok(UIS.every((m) => Object.keys(m).length > 0) && typeof UIS[0].createMassing === 'function' && typeof UIS[1].createSunHours === 'function', 'massing-ui.js and sunhours-ui.js load and export their factories');
 
 section('IFC out (M6): written, opened by cc-ifc, placed by BimCraft\'s reader');
+if (!GEO) console.log('  (no BimCraft ifc-geo.js in this checkout: the checks with BimCraft\'s reader are run on the site only)');
 {
   const FTUS = 1200 / 3937;
   const crs = { code: 2277, name: 'NAD83 / Texas Central (ftUS)', unit: 'ftUS' };
@@ -367,6 +370,7 @@ section('IFC out (M6): written, opened by cc-ifc, placed by BimCraft\'s reader')
   const mid = api.OpenModel(new TextEncoder().encode(r.text));
   const cnt = (t) => api.GetLineIDsWithType(mid, t).size();
   ok(cnt(IFCLIB.IFCPROJECT) === 1 && cnt(IFCLIB.IFCSITE) === 1 && cnt(IFCLIB.IFCBUILDING) === 2 && cnt(IFCLIB.IFCBUILDINGSTOREY) === 5 && cnt(IFCLIB.IFCBUILDINGELEMENTPROXY) === 2, 'cc-ifc opens it: Project > Site > 2 Buildings > 5 Storeys, one proxy per mass');
+  if (GEO) {
   const g = GEO.readGeoref(api, mid);
   ok(g && g.kind === 'map' && g.crs.code === 2277 && Math.abs(g.mapUnitM - FTUS) < 1e-12 && Math.abs(g.fileUnitM - FTUS) < 1e-12, 'BimCraft reads EPSG:2277, map unit and file unit 0.3048006096 m (' + (g && g.mapUnitM) + ')');
   // a corner of Block A: in the file it is (x − ox, y − oy, z − oz) feet; on the map it must come back to the project's coordinates to < 1 mm
@@ -374,6 +378,7 @@ section('IFC out (M6): written, opened by cc-ifc, placed by BimCraft\'s reader')
   const corner = A.pts[2], map = GEO.fileToMap(g, [corner.x - o.x, corner.y - o.y, A.z0 + 36 - o.z]);
   near(map[0], corner.x * FTUS, 0.001, 'a corner of Block A is on the map at its project easting to < 1 mm (' + ((map[0] - corner.x * FTUS) * 1000).toFixed(4) + ' mm off)');
   near(map[1], corner.y * FTUS, 0.001, '… and northing'); near(map[2], (A.z0 + 36) * FTUS, 0.001, '… and the roof height');
+  }
   // volumes and sizes of the proxy meshes, in metres: footprint × height × (ftUS)³
   const vol = new Map(), ext = new Map();
   api.StreamAllMeshes(mid, (mesh) => {
@@ -399,14 +404,16 @@ section('IFC out (M6): written, opened by cc-ifc, placed by BimCraft\'s reader')
   ok(psets.length === 2 && get(psA, 'Use') === 'Housing' && get(psA, 'Floors') === 3 && Math.abs(get(psA, 'FloorHeight') - 12) < 1e-9 && get(psA, 'Parcel') === 'Lot 7' && get(psA, 'BaseOnSlope') === 'stepped', 'pset CadCraft_SiteMass: use, floors, floor height (in the file\'s unit), parcel, base');
   near(get(psA, 'GrossFloorArea'), 3600 * FTUS ** 2, 1e-6, 'GrossFloorArea is in square metres: 3,600 sq ft = ' + (3600 * FTUS ** 2).toFixed(3));
   const site = api.GetLine(mid, [...api.GetLineIDsWithType(mid, IFCLIB.IFCSITE)][0], true);
-  near(GEO.compound(site.RefLatitude.map((x) => x)), 30.2, 1e-6, 'IfcSite RefLatitude'); near(GEO.compound(site.RefLongitude.map((x) => x)), -97.7, 1e-6, 'RefLongitude');
+  if (GEO) { near(GEO.compound(site.RefLatitude.map((x) => x)), 30.2, 1e-6, 'IfcSite RefLatitude'); near(GEO.compound(site.RefLongitude.map((x) => x)), -97.7, 1e-6, 'RefLongitude'); }
   api.CloseModel?.(mid);
   // a metre project with no coordinate system: no map conversion, a site latitude and longitude only
   const m1 = { ...A, pts: A.pts.map((p) => ({ x: p.x - 2080000, y: p.y - 6150000 })), z0: 100 };
   const r2 = IM.writeMassingIfc({ name: 'M', units: 'm', crs: null, lat: 19.4, lon: -99.1, masses: [m1] });
   ok(!/IFCPROJECTEDCRS|IFCMAPCONVERSION/.test(r2.text) && r2.unit === 'm', 'no coordinate system: no IfcProjectedCRS or IfcMapConversion, and a metre project is written in metres');
-  const mid2 = api.OpenModel(new TextEncoder().encode(r2.text)), g2 = GEO.readGeoref(api, mid2);
-  ok(g2 && g2.kind === 'site' && Math.abs(g2.lat - 19.4) < 1e-6 && g2.fileUnitM === 1, 'BimCraft reads the site latitude / longitude only, file unit 1 m');
+  if (GEO) {
+    const mid2 = api.OpenModel(new TextEncoder().encode(r2.text)), g2 = GEO.readGeoref(api, mid2);
+    ok(g2 && g2.kind === 'site' && Math.abs(g2.lat - 19.4) < 1e-6 && g2.fileUnitM === 1, 'BimCraft reads the site latitude / longitude only, file unit 1 m');
+  }
   ok(IM.guid('x').length === 22 && IM.writeMassingIfc({ masses: [] }).counts.masses === 0, 'a guid is 22 characters; no masses is an empty site, not an error');
 }
 
