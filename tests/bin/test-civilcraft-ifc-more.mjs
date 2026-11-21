@@ -144,6 +144,17 @@ try {
     const ia = PJ.Project.fromJSON(JSON.parse(JSON.stringify(into.toJSON()))).project.state.alignments[0];
     ok(ia?.profName === 'Main FG' && JSON.stringify(ia.moreProfiles?.map((m) => m.name)) === JSON.stringify(Object.keys(ALT)), `${schema}: opened, saved and reopened, the alignment keeps the name and both other profiles`, ia && { n: ia.profName, m: ia.moreProfiles?.map((m) => m.name) });
   }
+  // a profile that runs past the alignment's ends (−100 … 400 on a 283 long road) or lies wholly off it comes back whole from every schema
+  {
+    const q = road(false);
+    q.state.alignments[0].moreProfiles = [{ name: 'Long', pvis: [{ sta: -100, z: 97, L: 0 }, { sta: 140, z: 104, L: 50 }, { sta: 400, z: 99, L: 0 }] }, { name: 'Off', pvis: [{ sta: 500, z: 90, L: 0 }, { sta: 600, z: 91, L: 0 }] }];
+    for (const schema of SCHEMAS) {
+      const r = IW.writeCivilIfc(IM.civilIfcModel(q), { schema, now: NOW }), b = RD.readCivilIfc(new TextEncoder().encode(r.text), { units: 'm' }).alignments[0] || {};
+      const m = b.moreProfiles || [];
+      ok(m.length === 2 && m[0].name === 'Long' && near(m[0].pvis, q.state.alignments[0].moreProfiles[0].pvis) && m[1].name === 'Off' && near(m[1].pvis, q.state.alignments[0].moreProfiles[1].pvis), `${schema}: profiles past or off the alignment come back whole`, m);
+      if (schema === 'IFC4X3_ADD2') ok(r.counts.profiles === 1, 'IFC 4.3: only the one that reaches the road gets a child layout (clipped to it)', r.counts);
+    }
+  }
   const plain = road(false, null), mp = IM.civilIfcModel(plain).alignments[0], rp = IW.writeCivilIfc(IM.civilIfcModel(plain), { now: NOW });
   ok(mp.profName === 'Road 1 design' && !mp.more.length && rp.counts.profiles === 0, 'no other profiles: none written; the design profile is named "Road 1 design"', { n: mp.profName, c: rp.counts.profiles });
   ok(RD.readCivilIfc(new TextEncoder().encode(rp.text), { units: 'm' }).alignments[0]?.moreProfiles === undefined, 'and none read back');

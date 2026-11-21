@@ -236,6 +236,15 @@ export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles
     }
   }
   const isChild = new Set([...childrenOf.values()].flat());
+  // Slice 4: the other design profiles CivilCraft wrote in CadCraft_Alignment.MoreProfiles (whole PVI tables, in project units of the file)
+  const morePset = (c) => {
+    try {
+      const mp = JSON.parse(typeof c?.MoreProfiles === 'string' ? c.MoreProfiles : '[]');
+      return (Array.isArray(mp) ? mp : []).map((x) => ({ name: (typeof x?.name === 'string' ? x.name.trim().slice(0, 120) : '') || t('lx.def.profile'),
+        pvis: (Array.isArray(x?.pvis) ? x.pvis : []).filter((q) => Array.isArray(q) && fin(+q[0]) && fin(+q[1])).map(([sta, z, L]) => ({ sta: sta * k, z: z * k, L: (fin(+L) ? +L : 0) * k })) }))
+        .filter((x) => x.pvis.length >= 2).slice(0, MAX_MORE_PROFILES);
+    } catch { return []; }
+  };
   if (f.schemaName === 'IFC4X3') for (const al of f.ofType('IFCALIGNMENT')) {
     const name = g.str(g.a(al, 'Name')) || t('ifc.in.al.name', { n: out.alignments.length + 1 });
     const kids = N.get(al) || [];
@@ -278,12 +287,13 @@ export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles
           sl: g.num(g.a(dp, 'StartCantLeft'), 0) * mm, sr: g.num(g.a(dp, 'StartCantRight'), 0) * mm, el: g.num(g.a(dp, 'EndCantLeft'), g.num(g.a(dp, 'StartCantLeft'), 0)) * mm, er: g.num(g.a(dp, 'EndCantRight'), g.num(g.a(dp, 'StartCantRight'), 0)) * mm })) };
       }
     }
-    // Slice 4: the other design profiles (child alignments), each under its vertical's name (else the child's)
-    const moreProfiles = [];
+    // Slice 4: the other design profiles. A CivilCraft file's whole tables (its child layouts are clipped to the alignment, and a
+    // profile wholly off it has none), else the child alignments, each under its vertical's name (else the child's)
+    const own = morePset(P.get(al)?.CadCraft_Alignment), moreProfiles = own.length ? own : [];
     for (const c of childrenOf.get(al) || []) {
       const lay = (N.get(c) || []).find((x) => g.t(x) === 'IFCALIGNMENTVERTICAL'), pv = layoutToPvis(vSegsOf(lay), start);
       const pn = (g.str(g.a(lay, 'Name')) || g.str(g.a(c, 'Name')) || t('lx.def.profile')).slice(0, 120);
-      if (pv.pvis.length >= 2 && moreProfiles.length < MAX_MORE_PROFILES) moreProfiles.push({ name: pn, pvis: pv.pvis });
+      if (!own.length && pv.pvis.length >= 2 && moreProfiles.length < MAX_MORE_PROFILES) moreProfiles.push({ name: pn, pvis: pv.pvis });
       used.add(c);
     }
     fromSegs(name, h, v, start, 'layout', al, cant, eqs, { ...(v.length && profName ? { profName: profName.slice(0, 120) } : {}), ...(moreProfiles.length ? { moreProfiles } : {}) });
@@ -328,13 +338,7 @@ export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles
     try { rail = c.RailSettings ? cleanRail(JSON.parse(c.RailSettings), pu) : null; } catch { rail = null; }
     // Slice 4: the design profile's name and the other design profiles CivilCraft wrote
     const profName = typeof c.ProfileName === 'string' && pvis.length >= 2 ? c.ProfileName.trim().slice(0, 120) : '';
-    let moreProfiles = [];
-    try {
-      const mp = JSON.parse(typeof c.MoreProfiles === 'string' ? c.MoreProfiles : '[]');
-      moreProfiles = (Array.isArray(mp) ? mp : []).map((x) => ({ name: (typeof x?.name === 'string' ? x.name.trim().slice(0, 120) : '') || t('lx.def.profile'),
-        pvis: (Array.isArray(x?.pvis) ? x.pvis : []).filter((q) => Array.isArray(q) && fin(+q[0]) && fin(+q[1])).map(([sta, z, L]) => ({ sta: sta * k, z: z * k, L: (fin(+L) ? +L : 0) * k })) }))
-        .filter((x) => x.pvis.length >= 2).slice(0, MAX_MORE_PROFILES);
-    } catch { moreProfiles = []; }
+    const moreProfiles = morePset(c);
     out.alignments.push({ name: g.str(g.a(id, 'Name')) || t('ifc.in.al.name', { n: out.alignments.length + 1 }), start: (fin(c.StartStation) ? c.StartStation : 0) * k, pis, pvis: pvis.length >= 2 ? pvis : [], from: 'pset', notes: [], design: designOf(id), ...(rail ? { rail } : {}), ...(profName ? { profName } : {}), ...(moreProfiles.length ? { moreProfiles } : {}) });
     used.add(id);
   }
