@@ -133,7 +133,7 @@ export function mountFiles(ctx) {
     refresh(); fitAll();
     say(t('cv.lx.opened', { file: name, points: t('cv.pts.n', { n: d.points.length, count: num(d.points.length) }), surfaces: t('cv.surfaces.n', { n: d.surfaces.length }), alignments: t('cv.als.n', { n: d.alignments.length }) }) + (missingCrs ? ' ' + missingCrs : ''));
     // GIS: the file's <CoordinateSystem> is offered as the project's system (gis-vector-ui.js)
-    if (d.coordinateSystem) gisLoad().then(() => ctx.gisReg.landxmlCrs?.(d.coordinateSystem, name)).catch(() => {});
+    if (d.coordinateSystem) gisLoad().then(() => ctx.gisReg.landxmlCrs?.(d.coordinateSystem, name, p)).catch(() => {});
   }
 
   function importPoints(text, name, ownUnit = null) {   // ownUnit: the unit of a list the app itself supplies (the sample site)

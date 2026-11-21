@@ -14,7 +14,7 @@
  *   onProject the GIS layers section of the left panel ([data-gis-layers]) follows the open project
  *   crsChange after the project's system changes, offers to move the layers to the new system
  *   pointsLatLon(points, fileName) → { points, crs, note } | null   point files with latitude/longitude columns
- *   landxmlCrs(cs, fileName)    a LandXML <CoordinateSystem> offered as the project's system
+ *   landxmlCrs(cs, fileName, project)    a LandXML <CoordinateSystem> offered for the project that opened it
  *   exportExtra  [(container) => void]: other parts fill the GIS › Export dialog's extra spot ([data-gis-export-extra];
  *             builder B's GeoTIFF section goes in its [data-gis-geotiff] child)
  * reg.pickCrs (builder C) is used when it exists; until then the import dialog lists suggested systems itself.
@@ -433,17 +433,18 @@ export async function install(host) {
     const cname = crs.local ? t('vec.crs.ground', { crs: crs.name }) : crs.name;
     return { points: r.points, crs: set, note: t(set ? 'vec.latlon.note.set' : 'vec.latlon.note', { crs: cname }) + (r.bad ? ' ' + t('vec.latlon.bad', { n: r.bad }) : '') };
   };
-  reg.landxmlCrs = async (cs, name) => {
+  reg.landxmlCrs = async (cs, name, project) => {
+    if (P() !== project) return;
     const r = crsFromLandXml(cs);
-    const s = P().state;
+    const s = project.state;
     if (!r.crs) { host.say(t('vec.lx.unknown', { file: name, why: r.why })); return; }
     const why = crsProblem(r.crs, s.units);
     if (why) { host.say(t('vec.lx.cannot', { file: name, crs: r.crs.name, why })); return; }
     if (s.crs && s.crs.proj4 === r.crs.proj4) return;
     const c = await host.ask({ title: t('vec.lx.title'), text: t('vec.lx.says', { file: name, crs: r.crs.name + (r.crs.code ? ' (EPSG:' + r.crs.code + ')' : '') }) + (cs.desc ? ' ' + t('vec.lx.also', { desc: cs.desc.slice(0, 200) }) : '') + ' ' + t('vec.lx.use'), buttons: [['cancel', t('vec.lx.notnow'), 'btn-line'], ['use', t('vec.use.go'), 'btn-plot']] });
-    if (c !== 'use') return;
+    if (c !== 'use' || P() !== project) return;
     const before = s.crs;
-    P().change(t('vec.lx.undo', { file: name }), (st) => { st.crs = r.crs; });
+    project.change(t('vec.lx.undo', { file: name }), (st) => { st.crs = r.crs; });
     for (const f of reg.crsChange) f(before, r.crs);
     host.say(t('vec.lx.now', { crs: r.crs.name }));
   };
