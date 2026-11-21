@@ -91,6 +91,37 @@ try {
     ok(Math.abs(into.alignments[0].pis[0].x - E0 * k) < 1e-6, 'by the ratio of the two feet', into.alignments[0].pis[0].x);
   }
 
+  section('project-facing unit names follow the saved unit');
+  const catalog = JSON.parse(fs.readFileSync(path.join(APP, 'crs-db.json'), 'utf8')).crs;
+  const crs = (code) => {
+    const [, name, proj4, unit] = catalog.find((row) => row[0] === code);
+    return { code, name, proj4, unit };
+  };
+  const labels = [
+    [{ units: 'ft', foot: 'ft', crs: crs(2227) }, 'international feet'],
+    [{ units: 'ft', foot: 'ftUS', crs: crs(2256) }, 'US survey feet'],
+    [{ units: 'ft', crs: crs(2256) }, 'international feet'],
+    [{ units: 'ft' }, 'US survey feet'],
+    [{ units: 'm' }, 'metres'],
+  ];
+  for (const [state, label] of labels) {
+    const p = new PJ.Project();
+    Object.assign(p.state, state);
+    p.setPoints([{ n: '1', x: 2000000.125, y: 800000.25, z: 3580.875 }], 'synthetic');
+    const back = PJ.Project.fromJSON(JSON.parse(JSON.stringify(p.toJSON()))).project;
+    const text = U.projectUnitName?.(back.state);
+    ok(text?.toLowerCase() === label.toLowerCase(), 'reopened project shows ' + label, text);
+    ok(back.points[0]?.x === 2000000.125 && back.points[0]?.y === 800000.25 && back.points[0]?.z === 3580.875, 'reopen leaves E, N and Z unchanged');
+  }
+  const en = JSON.parse(fs.readFileSync(path.join(APP, 'lang/en.json'), 'utf8'));
+  const fr = JSON.parse(fs.readFileSync(path.join(APP, 'lang/fr.json'), 'utf8'));
+  I18N.init({ locale: 'fr', strings: { ...en, ...fr } });
+  ok(U.projectUnitName?.({ units: 'ft', foot: 'ft' }) === 'pieds internationaux', 'international-foot label is localized in French');
+  ok(U.projectUnitName?.({ units: 'ft', foot: 'ftUS' }) === 'pieds US (survey)', 'US-survey-foot label is localized in French');
+  I18N.init({ locale: 'en', strings: en });
+  const metricWithFoot = { units: 'm', foot: 'ft' };
+  ok(U.projectUnitName?.(metricWithFoot, 'ft') === 'international feet', 'inactive foot choice reflects the project’s foot definition');
+
   section('older projects and coordinate systems');
   const old = new PJ.Project(); old.state.units = 'ft';
   ok(!('foot' in old.toJSON()), 'a project with no stated foot writes none (older files unchanged)');
