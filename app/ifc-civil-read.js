@@ -7,7 +7,9 @@
  *     schema, fileUnit (metres per file unit), units ('m' | 'ft': the project's, or the file's when none is given),
  *     foot ('ft' | 'ftUS' | null: Slice 2, the project's foot as given, or the file's when no units are given),
  *     georef: { crs, eastings, northings, height, rotation, scale } | null,
- *     alignments: [{ name, start, pis: [{x, y, r, ls1?, ls2?}], pvis: [{sta, z, L}], from, notes, design, gid (its GlobalId) }],
+ *     alignments: [{ name, start, pis: [{x, y, r, ls1?, ls2?}], pvis: [{sta, z, L}], from, notes, design, gid (its GlobalId),
+ *                    profName? (Slice 4: the design profile's name), moreProfiles?: [{ name, pvis }] (its other design profiles: IFC 4.3
+ *                    child alignments, or CivilCraft's own CadCraft_Alignment.MoreProfiles) }],
  *     surfaces: [{ id, name, kind 'eg' | 'design' | 'terrain', pts: [{x, y, z}], faces: [[a, b, c]] }],
  *     refs: [{ id, name, cls, positions: Float64Array (project coordinates), indices: Uint32Array }],
  *     counts, notes: [text] }
@@ -38,6 +40,7 @@ import { t } from './i18n.js';
 import { FOOT_M } from './units.js';
 import { transitionShape, transitionAt, cubicParamFor, buildAlignment, cleanEquations } from './alignment.js';   // 0.7.1 71.26 / B: rail transitions
 import { railDefaults, cleanRail } from './rail.js';
+import { MAX_MORE_PROFILES } from './project.js';   // Slice 4
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const M_PER = { m: 1, ft: 1200 / 3937 };
@@ -196,7 +199,7 @@ export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles
     const speed = fin(c.DesignSpeedValue) ? c.DesignSpeedValue : null, unit = c.DesignSpeedUnit === 'mph' ? 'mph' : 'km/h', cls = typeof c.DesignClass === 'string' ? c.DesignClass : '';
     return speed !== null || cls ? { ...(speed !== null ? { speed } : {}), unit, ...(cls ? { cls } : {}) } : null;
   };
-  const fromSegs = (name, h, v, start, from, id, cant = null, eqs = []) => {
+  const fromSegs = (name, h, v, start, from, id, cant = null, eqs = [], extra = {}) => {
     const r = layoutToPis(h);
     if (!r.pis) { notes.push(t('ifc.in.al.skip', { name, why: r.notes.join(' ') })); return; }
     const pv = layoutToPvis(v, start);
@@ -214,19 +217,41 @@ export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles
       rail = cleanRail(own || { ...railDefaults(pu), base: Math.round(cant.base * 1000) / 1000 }, pu);
       if (!own) notes.push(t('ifc.in.al.rail', { name }));
     }
-    out.alignments.push({ name, start, pis: r.pis, pvis: pv.pvis.length >= 2 ? pv.pvis : [], from, notes: [...r.notes, ...pv.notes], design: designOf(id), gid: g.str(g.a(id, 'GlobalId')), ...(rail ? { rail } : {}), ...(eqs.length ? { eqs: cleanEquations(eqs) } : {}) });
+    out.alignments.push({ name, start, pis: r.pis, pvis: pv.pvis.length >= 2 ? pv.pvis : [], from, notes: [...r.notes, ...pv.notes], design: designOf(id), gid: g.str(g.a(id, 'GlobalId')), ...(rail ? { rail } : {}), ...(eqs.length ? { eqs: cleanEquations(eqs) } : {}), ...extra });
     used.add(id);
   };
 
   // ---- IFC 4.3: layouts
+  const segsOf = (layout) => (N.get(layout) || []).map((s) => g.ref(g.a(s, 'DesignParameters'))).filter((x) => x !== null);
+  const vSegsOf = (lay) => segsOf(lay).map((dp) => ({ type: g.enm(g.a(dp, 'PredefinedType')), d0: g.num(g.a(dp, 'StartDistAlong'), 0) * LEN, len: g.num(g.a(dp, 'HorizontalLength'), 0) * LEN, z0: (g.num(g.a(dp, 'StartHeight'), 0) * sc + (geo?.height || 0)) * k, g0: g.num(g.a(dp, 'StartGradient'), 0), g1: g.num(g.a(dp, 'EndGradient'), 0) }));
+  // Slice 4: child alignments (IFC 4.3 "reusing horizontal layout": an IfcAlignment aggregated to another, nesting only a vertical
+  // layout) are the parent's other design profiles
+  const childrenOf = new Map(), hasLayout = (al, tp) => (N.get(al) || []).some((x) => g.t(x) === tp);
+  if (f.schemaName === 'IFC4X3') for (const rel of f.ofType('IFCRELAGGREGATES')) {
+    const o = g.ref(g.a(rel, 'RelatingObject'));
+    if (o === null || g.t(o) !== 'IFCALIGNMENT' || !hasLayout(o, 'IFCALIGNMENTHORIZONTAL')) continue;
+    for (const c of g.refs(g.a(rel, 'RelatedObjects'))) if (g.t(c) === 'IFCALIGNMENT' && !hasLayout(c, 'IFCALIGNMENTHORIZONTAL') && hasLayout(c, 'IFCALIGNMENTVERTICAL')) {
+      if (!childrenOf.has(o)) childrenOf.set(o, []);
+      childrenOf.get(o).push(c);
+    }
+  }
+  const isChild = new Set([...childrenOf.values()].flat());
+  // Slice 4: the other design profiles CivilCraft wrote in CadCraft_Alignment.MoreProfiles (whole PVI tables, in project units of the file)
+  const morePset = (c) => {
+    try {
+      const mp = JSON.parse(typeof c?.MoreProfiles === 'string' ? c.MoreProfiles : '[]');
+      return (Array.isArray(mp) ? mp : []).map((x) => ({ name: (typeof x?.name === 'string' ? x.name.trim().slice(0, 120) : '') || t('lx.def.profile'),
+        pvis: (Array.isArray(x?.pvis) ? x.pvis : []).filter((q) => Array.isArray(q) && fin(+q[0]) && fin(+q[1])).map(([sta, z, L]) => ({ sta: sta * k, z: z * k, L: (fin(+L) ? +L : 0) * k })) }))
+        .filter((x) => x.pvis.length >= 2).slice(0, MAX_MORE_PROFILES);
+    } catch { return []; }
+  };
   if (f.schemaName === 'IFC4X3') for (const al of f.ofType('IFCALIGNMENT')) {
     const name = g.str(g.a(al, 'Name')) || t('ifc.in.al.name', { n: out.alignments.length + 1 });
     const kids = N.get(al) || [];
     if (!kids.some((x) => g.t(x) === 'IFCALIGNMENTHORIZONTAL')) {   // a child alignment (its own vertical) or an empty one
-      if (kids.some((x) => g.t(x) === 'IFCALIGNMENTVERTICAL')) notes.push(t('ifc.in.al.child', { name }));
+      if (kids.some((x) => g.t(x) === 'IFCALIGNMENTVERTICAL') && !isChild.has(al)) notes.push(t('ifc.in.al.child', { name }));
       continue;
     }
-    const segsOf = (layout) => (N.get(layout) || []).map((s) => g.ref(g.a(s, 'DesignParameters'))).filter((x) => x !== null);
     let start = 0;
     for (const r of kids.filter((x) => g.t(x) === 'IFCREFERENT')) {
       const ps = P.get(r)?.Pset_Stationing, d = (() => { const lp = g.ref(g.a(r, 'ObjectPlacement')); const rp = lp !== null ? g.ref(g.a(lp, 'RelativePlacement')) : null; const loc = rp !== null ? g.ref(g.a(rp, 'Location')) : null; return loc !== null ? g.num(g.a(loc, 'DistanceAlong'), null) : null; })();
@@ -247,16 +272,14 @@ export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles
       }
     }
     const h = [], v = [];
-    let cant = null;
+    let cant = null, profName = '';
     for (const lay of kids) {
       if (g.t(lay) === 'IFCALIGNMENTHORIZONTAL') for (const dp of segsOf(lay)) {
         const sp = g.point(g.ref(g.a(dp, 'StartPoint'))), [x, y] = toProject(sp[0], sp[1], 0);
         const rr = (a) => { const r = g.num(g.a(dp, a), 0); return r * LEN; };
         h.push({ type: g.enm(g.a(dp, 'PredefinedType')), x, y, dir: g.num(g.a(dp, 'StartDirection'), 0) * g.angleUnit + rot, r0: rr('StartRadiusOfCurvature'), r1: rr('EndRadiusOfCurvature'), len: g.num(g.a(dp, 'SegmentLength'), 0) * LEN });
       }
-      if (g.t(lay) === 'IFCALIGNMENTVERTICAL') for (const dp of segsOf(lay)) {
-        v.push({ type: g.enm(g.a(dp, 'PredefinedType')), d0: g.num(g.a(dp, 'StartDistAlong'), 0) * LEN, len: g.num(g.a(dp, 'HorizontalLength'), 0) * LEN, z0: (g.num(g.a(dp, 'StartHeight'), 0) * sc + (geo?.height || 0)) * k, g0: g.num(g.a(dp, 'StartGradient'), 0), g1: g.num(g.a(dp, 'EndGradient'), 0) });
-      }
+      if (g.t(lay) === 'IFCALIGNMENTVERTICAL' && !v.length) { v.push(...vSegsOf(lay)); profName = g.str(g.a(lay, 'Name')) || ''; }
       if (g.t(lay) === 'IFCALIGNMENTCANT') {
         // 0.7.1 71.26 / B: the cant layout (rails' heights in the file's unit → mm) and the rail head distance (rail.js base, mm)
         const mm = fileUnit * 1000;
@@ -264,7 +287,16 @@ export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles
           sl: g.num(g.a(dp, 'StartCantLeft'), 0) * mm, sr: g.num(g.a(dp, 'StartCantRight'), 0) * mm, el: g.num(g.a(dp, 'EndCantLeft'), g.num(g.a(dp, 'StartCantLeft'), 0)) * mm, er: g.num(g.a(dp, 'EndCantRight'), g.num(g.a(dp, 'StartCantRight'), 0)) * mm })) };
       }
     }
-    fromSegs(name, h, v, start, 'layout', al, cant, eqs);
+    // Slice 4: the other design profiles. A CivilCraft file's whole tables (its child layouts are clipped to the alignment, and a
+    // profile wholly off it has none), else the child alignments, each under its vertical's name (else the child's)
+    const own = morePset(P.get(al)?.CadCraft_Alignment), moreProfiles = own.length ? own : [];
+    for (const c of childrenOf.get(al) || []) {
+      const lay = (N.get(c) || []).find((x) => g.t(x) === 'IFCALIGNMENTVERTICAL'), pv = layoutToPvis(vSegsOf(lay), start);
+      const pn = (g.str(g.a(lay, 'Name')) || g.str(g.a(c, 'Name')) || t('lx.def.profile')).slice(0, 120);
+      if (!own.length && pv.pvis.length >= 2 && moreProfiles.length < MAX_MORE_PROFILES) moreProfiles.push({ name: pn, pvis: pv.pvis });
+      used.add(c);
+    }
+    fromSegs(name, h, v, start, 'layout', al, cant, eqs, { ...(v.length && profName ? { profName: profName.slice(0, 120) } : {}), ...(moreProfiles.length ? { moreProfiles } : {}) });
   }
 
   // ---- IFC 4x1: IfcAlignmentCurve (read by position: cc-ifc has no 4x1 table)
@@ -304,7 +336,10 @@ export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles
     if (pis.length < 2 || pis.some((p) => !fin(p.x) || !fin(p.y))) continue;
     let rail = null;
     try { rail = c.RailSettings ? cleanRail(JSON.parse(c.RailSettings), pu) : null; } catch { rail = null; }
-    out.alignments.push({ name: g.str(g.a(id, 'Name')) || t('ifc.in.al.name', { n: out.alignments.length + 1 }), start: (fin(c.StartStation) ? c.StartStation : 0) * k, pis, pvis: pvis.length >= 2 ? pvis : [], from: 'pset', notes: [], design: designOf(id), ...(rail ? { rail } : {}) });
+    // Slice 4: the design profile's name and the other design profiles CivilCraft wrote
+    const profName = typeof c.ProfileName === 'string' && pvis.length >= 2 ? c.ProfileName.trim().slice(0, 120) : '';
+    const moreProfiles = morePset(c);
+    out.alignments.push({ name: g.str(g.a(id, 'Name')) || t('ifc.in.al.name', { n: out.alignments.length + 1 }), start: (fin(c.StartStation) ? c.StartStation : 0) * k, pis, pvis: pvis.length >= 2 ? pvis : [], from: 'pset', notes: [], design: designOf(id), ...(rail ? { rail } : {}), ...(profName ? { profName } : {}), ...(moreProfiles.length ? { moreProfiles } : {}) });
     used.add(id);
   }
   out.counts.alignments = out.alignments.length;
@@ -362,7 +397,8 @@ export function applyIfcImport(project, r, { eg = -1, refs = true, file = 'file.
   const addAlignments = (st) => {
     for (const a of r.alignments) {
       const id = project.nextId('a');
-      st.alignments.push({ id, name: a.name.slice(0, 120), start: a.start, pis: a.pis, pvis: a.pvis, ...(a.design ? { design: a.design } : {}), ...(a.rail ? { rail: a.rail } : {}), ...(a.eqs?.length ? { eqs: a.eqs } : {}) });
+      st.alignments.push({ id, name: a.name.slice(0, 120), start: a.start, pis: a.pis, pvis: a.pvis, ...(a.design ? { design: a.design } : {}), ...(a.rail ? { rail: a.rail } : {}), ...(a.eqs?.length ? { eqs: a.eqs } : {}),
+        ...(a.profName && a.pvis.length >= 2 ? { profName: a.profName } : {}), ...(a.moreProfiles?.length ? { moreProfiles: a.moreProfiles } : {}) });   // Slice 4
       added.push(id);
     }
     if (!s.alignments.length && !project.points.length && st.name === t('project.untitled')) st.name = file.replace(/\.[^.]+$/, '').slice(0, 120);
