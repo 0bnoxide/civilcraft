@@ -97,6 +97,7 @@ import { cleanProgress } from './progress.js';   // 0.8 EG.39: the survey rows k
 import { cleanPowerlines } from './powerline/model.js';   // 0.7 PL: the Power lines workspace (docs/0.7-PART8.md)
 import { cleanDescKeys, cleanLineCodes, grouper, figures } from './desckeys.js';   // 0.4 V16: description keys, line codes
 import { t } from './i18n.js';
+import { embeddedGridLoads } from './crs-grid-state.js';
 import { cleanLandXmlSource } from './landxml.js';
 import { ChunkHistory, objectJournal, recoverState, recoverExtras, join } from './history/index.js';   // 0.10 PERF.21 / PERF.24: undo by change records, autosave that writes what changed
 import { cleanAcceptedCivil } from './problems-civilcraft.js';   // 0.7.1 → 0.8: problems accepted as intended (docs/0.8-PROBLEMS-SPEC.md)
@@ -193,6 +194,8 @@ export class Project {
     this.pointsVersion = 0;
     this.gisFeatures = new Map(); this.gisVersion = 0;   // GIS: layer id → [{ g, p }], outside the snapshots
     this.crsGrids = new Map();   // 0.4 V11: grid shift files name → Uint8Array (crs.js loadGrid), outside the snapshots; state.crs.grid names the one in use
+    this.crsGridOwner = () => true;
+    this.crsGridLoad = null;
     this.idsTexts = idsTextStore();   // 0.7.1 71.25: IDS texts by hash, outside the snapshots (state.ids is { name, hash }; lead 2026-10-26)
     this.gisImages = new Map();   // GIS: map layer pictures 'img<n>' → data: URL (gis-map-ui.js), outside the snapshots (≤ 25 MB each)
     this.shell = {};   // 0.8 round 3: the shell's calc sheets and design reasons (shell-mount.js), outside the snapshots; saved as `shell`
@@ -203,7 +206,50 @@ export class Project {
     this.listeners = new Set();
   }
   on(f) { this.listeners.add(f); return () => this.listeners.delete(f); }
-  emit(kind) { for (const f of this.listeners) f(kind); }
+  emit(kind) {
+    this.syncCrsGrid();
+    for (const f of this.listeners) f(kind);
+  }
+  useCrsGrids(isCurrent) {
+    this.crsGridOwner = isCurrent;
+    this.syncCrsGrid();
+  }
+  syncCrsGrid() {
+    const crs = this.state.crs, name = crs?.grid, generation = this.documentGeneration;
+    const bytes = name && this.crsGridOwner?.() && this.crsGrids.get(name);
+    const previous = this.crsGridLoad;
+    if (previous && previous.bytes === bytes && previous.name === name && previous.generation === generation) {
+      embeddedGridLoads.set(crs, previous);
+      return;
+    }
+    if (previous?.status === 'pending') {
+      previous.status = 'canceled';
+      previous.resolve();
+    }
+    this.crsGridLoad = null;
+    this.gridError = null;
+    if (!bytes) return;
+
+    let resolve;
+    const ready = new Promise((done) => { resolve = done; });
+    const load = { name, bytes, generation, status: 'pending', info: null, resolve, ready };
+    this.crsGridLoad = load;
+    embeddedGridLoads.set(crs, load);
+    const current = () => this.crsGridLoad === load && this.crsGridOwner?.()
+      && this.documentGeneration === generation && this.state.crs?.grid === name && this.crsGrids.get(name) === bytes;
+    import('./crs.js').then((C) => C.loadGrid(name, bytes, { isCurrent: current, embedded: true })).then((info) => {
+      if (!current()) return;
+      load.info = info;
+      load.status = 'ready';
+    }, (err) => {
+      if (!current()) return;
+      this.gridError = err.message;
+      load.status = 'failed';
+    }).then(() => {
+      resolve();
+      if (current()) this.emit('crs-grid');
+    });
+  }
   get dirty() { return this.version !== this.saved; }
   /**
    * The undo steps. Emptying them (`undoStack = []`: a file was opened, the points were replaced, a Live snapshot came in) also starts the chunk table
@@ -841,7 +887,7 @@ export class Project {
     return rec && Object.keys(rec).length ? { usesAddons: rec } : {};
   }
 
-  static fromJSON(obj) {
+  static fromJSON(obj, { deferGrid = false } = {}) {
     const notes = [];
     if (!obj || obj.format !== 'civilcraft-project') throw new Error(t('project.err.notcc'));
     if (obj.version !== 1) throw new Error(t('project.err.newer', { version: String(obj.version).slice(0, 10) }));
@@ -991,9 +1037,8 @@ export class Project {
     if (idsRec) s.ids = { name: idsRec.name, hash: p.idsTexts.put(idsRec.text) };   // the snapshots keep { name, hash }; the text once
     { const g = readGisState(obj.gis, obj.gisFeatures, notes); s.gis = g.gis; p.gisFeatures = g.features; p.gisVersion++; }   // GIS (untrusted)
     p.crsGrids = readCrsGrids(obj.crsGrids, s.crs, notes);   // 0.4 V11
-    if (p.crsGrids.size) {   // register with proj4 (crs.js, loaded only when a project has a grid); then tell the views
-      import('./crs.js').then(async (C) => { for (const [n, b] of p.crsGrids) { try { await C.loadGrid(n, b); } catch (e) { p.gridError = e.message; } } p.emit('crs-grid'); }).catch((e) => { p.gridError = e.message; });
-    }
+    if (deferGrid) p.crsGridOwner = null;
+    else p.syncCrsGrid();
     p.gisImages = readGisImages(obj.gisImages, s.gis.maps, notes);   // GIS: map layer pictures (builder C; gis-map-ui.js reads the layers)
     p.points = pts; p.pointsFile = str(obj.pointsFile, 200); p.pointsVersion++;
     for (const a of [...(s.templates || []), ...(s.terrainTemplates || []), ...s.alignments.flatMap((x) => x.corridors || []), ...s.alignments, ...s.pads, ...(s.network ? [...s.network.structures, ...s.network.pipes, ...(s.network.catchments || []), ...(s.network.types || [])] : []), ...s.gis.layers, ...(s.features || []), ...(s.parcels || []), ...(s.issues || []), ...(s.utilities ? [...s.utilities.runs, ...s.utilities.nodes] : []), ...(s.masses || []), ...(s.swept || []), ...(s.ponds || []), ...Object.values(s.geo || {}).flat(), ...(s.landscape ? [...s.landscape.plants, ...s.landscape.beds, ...s.landscape.hedges, ...s.landscape.grading, ...s.landscape.hardscape, ...(s.landscape.areas || []), ...(s.landscape.levels || []), ...(s.landscape.sections || []), ...(s.landscape.irrigation ? ['heads', 'pipes', 'valves', 'drips'].flatMap((w) => s.landscape.irrigation[w]) : []), ...(s.landscape.freeform || [])] : []), ...(s.water ? [...s.water.nodes, ...s.water.pipes] : []), ...(s.powerlines ? [...s.powerlines.lines, ...s.powerlines.lines.flatMap((l) => l.supports), ...s.powerlines.routes, ...s.powerlines.equipment, ...s.powerlines.obstacles] : []), ...(s.moreSurfaces || []).filter((x) => x.id)]) { const n = Number(String(a.id).replace(/^\D+/, '')); if (n >= s.seq) s.seq = n + 1; }

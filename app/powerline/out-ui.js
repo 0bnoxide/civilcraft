@@ -18,8 +18,8 @@ import { writeDon, donBytes, readDon, donToState } from './don.js';
 import { writePack, readPack } from './pack.js';
 import { unitM, toForce, fromForce, forceUnit } from './units.js';
 import { PAPERS, paperBy, scalesFor, fitScale, planSheet, toPdfPages } from '../plot.js';
-import { writeExport, srsFor } from '../gis-export.js';
-import { frame, transformer, prjFor, METRES_PER as CRS_METRES } from '../crs.js';
+import { writeExport, srsFor, geographicFormat, exportLonLat } from '../gis-export.js';
+import { frame, prjFor, METRES_PER as CRS_METRES } from '../crs.js';
 import { t } from '../i18n.js';
 import { fixed } from '../units.js';
 
@@ -251,12 +251,15 @@ export function createOutUi(ctx, { P, edit, U, S, lib, compute, libUi, issueText
       button(t('pl.close'), () => dlg.close()),
       button(t('pl.gis.go'), async () => {
         const f = fmt.value;
-        if ((f === 'geojson' || f === 'kml' || f === 'kmz') && !crs) { ctx.say(t('pl.gis.needcrs')); return; }
+        const crs = P().state.crs;
+        if (geographicFormat(f) && !crs) { ctx.say(t('pl.gis.needcrs')); return; }
+        let toLonLat;
+        try { toLonLat = exportLonLat(crs, f); } catch (err) { ctx.say(err.message); return; }
         const fr = crs ? frame(crs) : null;
         const groups = geoGroups(geoFeatures(S(), compute().analyses, lib(), { units: U() }), fr ? { toGrid: fr.toGrid } : {});
         if (!groups.length) { ctx.say(t('pl.need.something')); return; }
-        const prj = crs ? await prjFor(crs) : null, k = crs ? CRS_METRES[crs.unit] || 1 : 1;
-        const r = await writeExport(groups, { format: f, prj, toLonLat: crs ? transformer(crs, null) : null, zToMetres: (z) => z * k, stem: ctx.fileStem() + '-power', srs: srsFor(crs, prj) });
+        const prj = crs && !geographicFormat(f) ? await prjFor(crs) : null, k = crs ? CRS_METRES[crs.unit] || 1 : 1;
+        const r = await writeExport(groups, { format: f, prj, toLonLat, zToMetres: (z) => z * k, stem: ctx.fileStem() + '-power', srs: srsFor(crs, prj) });
         ctx.download(r.bytes, r.name, r.type);
         ctx.say(t('pl.gis.done', { n: groups.reduce((s, g) => s + g.features.length, 0), notes: (r.notes || []).join(' ') }));
         dlg.close();

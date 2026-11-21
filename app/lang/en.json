@@ -2186,6 +2186,8 @@
   "grid.err.empty": "The grid file has no grids in it.",
   "grid.err.notinfile": "The grid shift file {name} is not in the project file: add it again under GIS › Coordinates (until then the rough shift is used).",
   "grid.err.badfile": "The grid shift file in the project file could not be read.",
+  "grid.err.pending": "Wait for the grid shift file {name} to finish loading before converting coordinates.",
+  "grid.err.required": "Load the grid shift file {name} under GIS › Coordinate system before converting coordinates.",
   "mh.c.sta": "Station",
   "mh.c.m": "Mass ordinate ({u})",
   "mh.c.from": "From",

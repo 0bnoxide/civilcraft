@@ -242,9 +242,14 @@ export async function install(host) {
         else out.push(el('p', { className: 'cv-note' }, t('tui.crs.none_both')));
         if (reg.pickCrs) out.push(el('button', { type: 'button', className: 'cv-linkbtn', onclick: async () => { const c = await pick(t('tui.crs.pick_file_q', { name: src.name })); if (c) { st.srcCrs = c; st.srcChosen = true; refresh(); } } }, t('tui.crs.pick_file')));
       } else if (pc) {
-        const same = toProject(s, pc).identity;
-        out.push(el('p', { className: 'cv-note' }, same ? t('tui.crs.same', { crs: crsText(pc) }) : t(pc.local ? 'tui.crs.convert_local' : 'tui.crs.convert', { from: crsText(s), to: crsText(pc) })));
-        if (!same) { const w = shiftWarning(s, pc); if (w) out.push(el('p', { className: 'cv-note' }, w)); }
+        try {
+          const same = toProject(s, pc).identity;
+          out.push(el('p', { className: 'cv-note' }, same ? t('tui.crs.same', { crs: crsText(pc) }) : t(pc.local ? 'tui.crs.convert_local' : 'tui.crs.convert', { from: crsText(s), to: crsText(pc) })));
+          if (!same) { const w = shiftWarning(s, pc); if (w) out.push(el('p', { className: 'cv-note' }, w)); }
+        } catch (err) {
+          crsBlock = err.message;
+          out.push(el('p', { className: 'cv-note' }, crsBlock));
+        }
       } else {
         const prob = crsProblem(s, pUnits());
         if (!prob) {
@@ -268,10 +273,10 @@ export async function install(host) {
     const xf = () => toProject(st.srcCrs, effCrs());
     // project units per file unit near the file's middle (for spacings)
     function unitScale() {
-      const f = xf().fn, c = boxOk ? [(fileBox.minX + fileBox.maxX) / 2, (fileBox.minY + fileBox.maxY) / 2] : [0, 0];
+      const c = boxOk ? [(fileBox.minX + fileBox.maxX) / 2, (fileBox.minY + fileBox.maxY) / 2] : [0, 0];
       const d = kind === 'grid' ? Math.hypot(src.gt[1], src.gt[4]) : Math.max(1e-6, (fileBox.maxX - fileBox.minX) / 1000) || 1;
       try {
-        const a = f(c[0], c[1]), b = f(c[0] + d, c[1]);
+        const f = xf().fn, a = f(c[0], c[1]), b = f(c[0] + d, c[1]);
         const k = Math.hypot(b[0] - a[0], b[1] - a[1]) / d;
         if (Number.isFinite(k) && k > 0) return k;
       } catch { /* fall through */ }
@@ -417,7 +422,12 @@ export async function install(host) {
     const stop = () => { if (st.job) st.job.abort(); else dlg.close(); };
     cancelBtn.onclick = stop; close.onclick = stop;
     dlg.addEventListener('cancel', (e) => { if (st.job) { e.preventDefault(); st.job.abort(); } });
-    dlg.addEventListener('close', () => { if (st.job) st.job.abort(); dlg.remove(); host.refocus(); });
+    const unwatchGrid = project.on((event) => {
+      if (event !== 'crs-grid' || host.project !== project) return;
+      if (!spacingTouched) { st.spacing = defaultSpacing(); spacingIn.value = String(st.spacing); }
+      refresh();
+    });
+    dlg.addEventListener('close', () => { unwatchGrid(); if (st.job) st.job.abort(); dlg.remove(); host.refocus(); });
     okBtn.onclick = () => run();
 
     async function run() {
@@ -428,9 +438,11 @@ export async function install(host) {
       for (const c of [areaSel, marginIn, spacingIn, modeSel, zSel, asPts, asTin, groundSel, objectIn, slopeIn]) c.disabled = true;
       const signal = st.job.signal;
       const t0 = performance.now();
-      const proj = host.project, epc = effCrs(), tr = xf(), zf = zFactor(st.zUnit, projectZUnit({ state: { ...proj.state, crs: epc } }));
+      const proj = host.project, epc = effCrs(), zf = zFactor(st.zUnit, projectZUnit({ state: { ...proj.state, crs: epc } }));
       const notes = [];
+      let tr;
       try {
+        tr = xf();
         if (kind === 'grid') {
           prog.set(0, t('tui.grid.reading'));
           const grid = await readWindow(src, { ...plan.win, step: plan.step, signal, progress: (f) => prog.set(f * 0.9, t('tui.grid.reading_pct', { pct: Math.round(f * 100) })) });

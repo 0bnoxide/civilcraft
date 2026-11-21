@@ -52,6 +52,7 @@
  */
 
 import proj4 from 'proj4';
+import { embeddedGridLoads } from './crs-grid-state.js';
 import { t } from './i18n.js';   // 0.4 V11 strings
 
 export const METRES_PER = { m: 1, ft: 0.3048, ftUS: 1200 / 3937 };
@@ -236,7 +237,11 @@ export function crsProblem(crs, projectUnits = 'ft') {
 const defOf = (c) => (!c ? WGS84 : typeof c === 'string' ? c : defFor(c));
 
 // ------------------------------------------------------------------ grid shift files (0.4 V11)
-const GRIDS = new Map();   // name → { name, kind, extent, subgrids, size }
+const GRIDS = new Map();   // proj4 registry key → public grid metadata
+const LATEST = new Map();  // file name → most recent registration, for diagnostics
+// Reuse a slot per name so separate documents cannot impersonate a pre-registered external file.
+const gridKey = (name, embedded) => embedded ? 'civilcraft-embedded:' + name : name;
+const DECODED = new WeakMap();   // original byte buffer → published metadata
 export const GRID_SUGGEST = [
   { name: 'us_noaa_nadcon5_nad27_nad83_1986_conus.tif', datum: 'NAD27', area: [-125, 24, -66, 50], accuracy: 0.1, size: 139914, get label() { return t('grid.s.conus'); } },
   { name: 'us_noaa_alaska.tif', datum: 'NAD27', area: [-194, 46, -128, 77], accuracy: 0.5, size: 524798, get label() { return t('grid.s.alaska'); } },
@@ -251,44 +256,120 @@ export function suggestGrids(crs) {
   return GRID_SUGGEST.filter((g) => cx >= g.area[0] && cx <= g.area[2] && cy >= g.area[1] && cy <= g.area[3]);
 }
 const safeName = (n) => String(n || '').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80);
-/** Register a grid with proj4. bytes: Uint8Array | ArrayBuffer. NTv2 starts with NUM_OREC; GeoTIFF with II*\0 or MM\0*. */
-export async function loadGrid(name, bytes) {
+function publishGrid(key, info, bytes) {
+  GRIDS.set(key, info);
+  LATEST.set(info.name, info);
+  DECODED.set(bytes, info);
+  cache.clear();   // definitions bind their grids when proj4 parses them
+}
+
+/** Register a grid once its owner still wants it. A canceled load never publishes its data or metadata. */
+export async function loadGrid(name, bytes, { isCurrent = () => true, embedded = false } = {}) {
   const nm = safeName(name);
-  if (!nm) throw new Error(t('grid.err.name'));
+  if (!nm || nm === 'null' || Object.hasOwn(Object.prototype, nm)) throw new Error(t('grid.err.name'));
+  const checkOwner = () => { if (!isCurrent()) throw new DOMException('Grid load canceled', 'AbortError'); };   // i18n-ignore: internal cancellation
+  checkOwner();
+  const registry = gridKey(nm, embedded), previous = DECODED.get(bytes);
+  if (previous && previous === GRIDS.get(registry)) return previous;
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
   const head = String.fromCharCode(...u8.subarray(0, 8));
-  let g, kind;
-  if (head === 'NUM_OREC') { kind = 'ntv2'; g = proj4.nadgrid(nm, ab); }
-  else if (head.startsWith('II*\u0000') || head.startsWith('MM\u0000*')) {
-    kind = 'geotiff';
+  const info = { name: nm, kind: null, extent: [Infinity, Infinity, -Infinity, -Infinity], subgrids: 0, size: u8.byteLength };
+  function include(w, s, e, n) {
+    const b = info.extent;
+    b[0] = Math.min(b[0], w); b[1] = Math.min(b[1], s);
+    b[2] = Math.max(b[2], e); b[3] = Math.max(b[3], n);
+    info.subgrids++;
+  }
+  if (head === 'NUM_OREC') {
+    info.kind = 'ntv2';
+    // A malformed empty grid must not replace a valid grid with this name.
+    if (ab.byteLength >= 44) {
+      const view = new DataView(ab);
+      if (view.getInt32(40, view.getInt32(8, false) !== 11) < 1) throw new Error(t('grid.err.empty'));
+    }
+    const g = proj4.nadgrid(registry, ab);
+    const D = 180 / Math.PI;
+    for (const { ll, del, lim } of g.subgrids) {
+      include(-(ll[0] + (lim[0] - 1) * del[0]) * D, ll[1] * D, -ll[0] * D, (ll[1] + (lim[1] - 1) * del[1]) * D);
+    }
+    publishGrid(registry, info, bytes);
+  } else if (head.startsWith('II*\u0000') || head.startsWith('MM\u0000*')) {
+    info.kind = 'geotiff';
     const { fromArrayBuffer } = await import('geotiff');
     const tiff = await fromArrayBuffer(ab);
-    g = await proj4.nadgrid(nm, tiff).ready;
+    checkOwner();
+    // The pinned proj4 reader decodes each image before using the key as a property name.
+    // Coercion is synchronous at the registry write, so no queued work can see half a publish.
+    const key = {
+      toString() {
+        checkOwner();
+        if (!info.subgrids) throw new Error(t('grid.err.empty'));
+        if (!info.extent.every(Number.isFinite)) throw new Error(t('grid.err.badfile'));
+        publishGrid(registry, info, bytes);
+        return registry;
+      },
+    };
+    await proj4.nadgrid(key, {
+      getImageCount: () => tiff.getImageCount(),
+      async getImage(index) {
+        const image = await tiff.getImage(index);
+        const [west, , , north] = image.getBoundingBox();
+        const dir = image.fileDirectory;
+        const [dx, dy] = typeof dir.getValue === 'function' ? dir.getValue('ModelPixelScale') : dir.ModelPixelScale;
+        include(west, north - (image.getHeight() - 1) * dy, west + (image.getWidth() - 1) * dx, north);
+        return image;
+      },
+    }).ready;
   } else throw new Error(t('grid.err.kind'));
-  if (!g?.subgrids?.length) throw new Error(t('grid.err.empty'));
-  // extent of every subgrid (proj4 keeps longitudes positive west, radians, ll = the south-east corner)
-  const D = 180 / Math.PI;
-  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
-  for (const sg of g.subgrids) {
-    const east = -sg.ll[0] * D, west = -(sg.ll[0] + (sg.lim[0] - 1) * sg.del[0]) * D, south = sg.ll[1] * D, north = (sg.ll[1] + (sg.lim[1] - 1) * sg.del[1]) * D;
-    w = Math.min(w, west); e = Math.max(e, east); s = Math.min(s, south); n = Math.max(n, north);
-  }
-  const info = { name: nm, kind, extent: [w, s, e, n], subgrids: g.subgrids.length, size: u8.byteLength };
-  GRIDS.set(nm, info);
-  cache.clear();   // definitions bind their grids when proj4 parses them
   return info;
 }
-export const gridInfo = (name) => GRIDS.get(name) || null;
-export const gridsLoaded = () => [...GRIDS.keys()];
+export const gridInfo = (name) => LATEST.get(name) ?? null;
+export const gridsLoaded = () => [...LATEST.keys()];
+
+function gridLoad(c) {
+  const load = embeddedGridLoads.get(c);
+  return load?.name === c.grid ? load : null;
+}
+function definitionKey(c) { return gridKey(c.grid, !!gridLoad(c)); }
+function gridDefinition(c) {
+  if (!c?.grid || !/^[A-Za-z0-9._-]{1,80}$/.test(c.grid) || c.grid === 'null' || Object.hasOwn(Object.prototype, c.grid)
+    || typeof c.proj4 !== 'string' || !c.proj4.startsWith('+')) return null;
+  return c.proj4.replace(/\+datum=NAD27\b/i, '+ellps=clrk66').replace(/\s*\+(?:towgs84|nadgrids)=\S+/g, '') + ' +nadgrids=@' + definitionKey(c);
+}
+function gridProblem(c) {
+  const load = gridLoad(c);
+  if (!load) return null;
+  if (load.status === 'pending') return t('grid.err.pending', { name: c.grid });
+  if (load.status !== 'ready' || load.info !== GRIDS.get(definitionKey(c))) return t('grid.err.badfile');
+  return null;
+}
+function registeredGrid(c, def) {
+  if (!def) return false;
+  const key = definitionKey(c);
+  return GRIDS.has(key) || proj4.Proj(def).datum?.grids?.some((entry) => entry?.name === key && entry.grid?.subgrids?.length);
+}
+export function requireCrsGrid(c) {
+  if (!c?.grid) return;
+  const why = gridProblem(c);
+  if (why) throw new Error(why);
+  const def = gridDefinition(c);
+  if (!registeredGrid(c, def)) {
+    throw new Error(t('grid.err.required', { name: c.grid }));
+  }
+}
 export function defFor(c) {
-  if (!c?.grid || !GRIDS.has(c.grid) || typeof c.proj4 !== 'string' || !c.proj4.startsWith('+')) return c?.proj4;
-  return c.proj4.replace(/\+datum=NAD27\b/i, '+ellps=clrk66').replace(/\s*\+(?:towgs84|nadgrids)=\S+/g, '') + ' +nadgrids=@' + c.grid;
+  const why = c?.grid && gridProblem(c);
+  if (why) throw new Error(why);
+  const def = gridDefinition(c);
+  if (registeredGrid(c, def)) return def;
+  return c?.proj4;
 }
 export function gridStatus(c, lon = null, lat = null) {
   if (!c?.grid) return null;
-  const g = GRIDS.get(c.grid);
-  if (!g) return { name: c.grid, loaded: false, inside: null };
+  const problem = gridProblem(c);
+  const g = !problem && GRIDS.get(definitionKey(c));
+  if (!g) return { name: c.grid, loaded: false, inside: null, ...(problem ? { problem } : {}) };
   const inside = lon === null || lat === null ? null : lon >= g.extent[0] && lon <= g.extent[2] && lat >= g.extent[1] && lat <= g.extent[3];
   return { name: c.grid, loaded: true, inside, info: g };
 }
@@ -302,8 +383,9 @@ function converter(a, b) {
 
 /** Any two systems (state.crs shapes, catalog entries, proj4/WKT strings; null = WGS 84 lon/lat). Ignores `local`. */
 export function transformer(from, to) {
-  const t = converter(defOf(from), defOf(to));
-  return (x, y) => t.forward([x, y]);
+  const build = () => converter(defOf(from), defOf(to));
+  const t = build();
+  return from?.grid || to?.grid ? (x, y) => build().forward([x, y]) : (x, y) => t.forward([x, y]);
 }
 
 export function frame(crs) {
@@ -315,7 +397,8 @@ export function frame(crs) {
     toGrid = (x, y) => { const dx = x - l.from[0], dy = y - l.from[1]; return [l.to[0] + k * (c * dx - s * dy), l.to[1] + k * (s * dx + c * dy)]; };
     fromGrid = (gx, gy) => { const dx = (gx - l.to[0]) / k, dy = (gy - l.to[1]) / k; return [l.from[0] + c * dx + s * dy, l.from[1] - s * dx + c * dy]; };
   }
-  const geo = converter(defFor(crs), WGS84);   // 0.4 V11: with its grid shift when one is loaded
+  let plain = null;
+  const geo = () => crs.grid ? converter(defFor(crs), WGS84) : (plain ||= converter(crs.proj4, WGS84));
   let P = null;
   const own = () => (P ||= proj4.Proj(crs.proj4)); // the projection on its own ellipsoid, metres, radians
   const f = {
@@ -324,17 +407,17 @@ export function frame(crs) {
     axes: crs.axes === 'ws' ? 'ws' : 'en',
     surveyor(x, y) { const g = toGrid(x, y); return crs.axes === 'ws' ? [-g[0], -g[1]] : g; },
     fromSurveyor(a, b) { return crs.axes === 'ws' ? fromGrid(-a, -b) : fromGrid(a, b); },
-    toLonLat(x, y) { const g = toGrid(x, y); return geo.forward(g); },
-    fromLonLat(lon, lat) { const g = geo.inverse([lon, lat]); return fromGrid(g[0], g[1]); },
+    toLonLat(x, y) { const g = toGrid(x, y); return geo().forward(g); },
+    fromLonLat(lon, lat) { const g = geo().inverse([lon, lat]); return fromGrid(g[0], g[1]); },
     to(other) {
       if (!other) return (x, y) => f.toLonLat(x, y);
-      const t = converter(defFor(crs), defOf(other));
-      return (x, y) => t.forward(toGrid(x, y));
+      const convert = transformer(crs, other);
+      return (x, y) => convert(...toGrid(x, y));
     },
     from(other) {
       if (!other) return (lon, lat) => f.fromLonLat(lon, lat);
-      const t = converter(defOf(other), defFor(crs));
-      return (x, y) => { const g = t.forward([x, y]); return fromGrid(g[0], g[1]); };
+      const convert = transformer(other, crs);
+      return (x, y) => fromGrid(...convert(x, y));
     },
     /** At a project point: grid scale factor k (along the meridian and the parallel, averaged — conformal systems make
      *  them equal), convergence γ (degrees, the surveying sign: geodetic azimuth = grid azimuth + γ; + east of the
@@ -356,7 +439,7 @@ export function frame(crs) {
       const R = Math.sqrt(M * N);
       const h = (Number(z) || 0) * (METRES_PER[crs.unit] || 1);
       const elevation = R / (R + h);
-      const [lon, lat] = geo.forward(g);
+      const [lon, lat] = geo().forward(g);
       return { k, kMeridian: kN, kParallel: kE, convergence, elevation, combined: k * elevation, lon, lat };
     },
   };

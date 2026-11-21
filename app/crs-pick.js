@@ -17,7 +17,7 @@
  *       map(x, y) → [x, y] (points, breaklines, boundary, alignment PIs, pads, structures); a LandXML TIN is refused
  */
 
-import { byCode, frame, transformer, search, METRES_PER, gridInfo, GRID_SUGGEST } from './crs.js';
+import { byCode, frame, transformer, search, METRES_PER, gridStatus, GRID_SUGGEST } from './crs.js';
 import { t } from './i18n.js';   // 0.4 V11
 
 export const familyOf = (units) => (units === 'm' ? ['m'] : ['ft', 'ftUS']);
@@ -69,8 +69,8 @@ export function shiftWords(x) {
   const name = String(x?.name || '');
   if (/^WGS 84\b/.test(name)) return t('crs.shift.wgs84');
   if (x?.grid) {   // 0.4 V11: a grid shift file
-    const g = gridInfo(x.grid), sg = GRID_SUGGEST.find((q) => q.name === x.grid);
-    return g ? t('grid.shift.on', { name: x.grid, acc: sg ? fmtM(sg.accuracy) : t('grid.shift.acc.own') }) : t('grid.shift.missing', { name: x.grid });
+    const status = gridStatus(x), sg = GRID_SUGGEST.find((q) => q.name === x.grid);
+    return status.loaded ? t('grid.shift.on', { name: x.grid, acc: sg ? fmtM(sg.accuracy) : t('grid.shift.acc.own') }) : status.problem || t('grid.shift.missing', { name: x.grid });
   }
   if (/^NAD83\b/.test(name)) return t('crs.shift.nad83');
   if (!e) return t('crs.shift.prj');

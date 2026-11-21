@@ -17,7 +17,8 @@
  */
 
 import { el } from './ui-util.js';
-import { search, suggest, byCode, crsFromEntry, crsFromPrj, crsProblem, frame, axisNames, localFromPairs, groundLocal, loadGrid, gridInfo, suggestGrids, GRID_CDN } from './crs.js';
+import { search, suggest, byCode, crsFromEntry, crsFromPrj, crsProblem, frame, axisNames, localFromPairs, groundLocal, loadGrid, gridStatus, suggestGrids, GRID_CDN } from './crs.js';
+import { retainGridBinding } from './crs-grid-state.js';
 import { t } from './i18n.js';   // 0.4 V11
 import { systemsThatFit, describe, latLonText, parseLatLon, gridOf, misclosure, groundFactor, reprojectProject, unitWords } from './crs-pick.js';
 
@@ -37,8 +38,8 @@ export function install(host) {
   let fr = null, frKey = null;
   const frameNow = () => {
     // 0.4 V11: the key changes once the project's grid shift file loads
-    const c = host.project.state.crs, k = c ? JSON.stringify(c) + units() + (c.grid && gridInfo(c.grid) ? '+grid' : '') : '';
-    if (k !== frKey) { frKey = k; fr = null; if (c && !crsProblem(c, units())) { try { fr = frame(c); } catch { fr = null; } } }
+    const c = host.project.state.crs, k = c ? JSON.stringify(c) + units() + (gridStatus(c)?.loaded ? '+grid' : '') : '';
+    if (k !== frKey || (fr && fr.crs !== c)) { frKey = k; fr = null; if (c && !crsProblem(c, units())) { try { fr = frame(c); } catch { fr = null; } } }
     return fr;
   };
   function showLatLon(cur) {
@@ -186,9 +187,9 @@ export function install(host) {
       const acc = c?.code != null ? safeByCode(c.code)?.shiftAccuracy : undefined;   // a grid helps where the shift is rough or unknown
       gridSec.hidden = pick || !c || (!c.grid && !sug.length && !(acc === null || acc > 1) && !/NAD27/i.test(c.name || ''));
       if (gridSec.hidden) return;
-      const g = c.grid ? gridInfo(c.grid) : null;
+      const grid = gridStatus(c), g = grid?.info;
       const kids = [el('h3', { className: 'cv-h3' }, t('grid.head'))];
-      kids.push(el('p', { className: 'cv-note', dataset: { gridStatus: '' } }, c.grid ? (g ? t('grid.using', { name: g.name, kind: g.kind === 'ntv2' ? 'NTv2' : 'GeoTIFF', w: g.extent[0].toFixed(2), s: g.extent[1].toFixed(2), e: g.extent[2].toFixed(2), n: g.extent[3].toFixed(2) }) : t('grid.shift.missing', { name: c.grid })) : t('grid.none')));
+      kids.push(el('p', { className: 'cv-note', dataset: { gridStatus: '' } }, c.grid ? (g ? t('grid.using', { name: g.name, kind: g.kind === 'ntv2' ? 'NTv2' : 'GeoTIFF', w: g.extent[0].toFixed(2), s: g.extent[1].toFixed(2), e: g.extent[2].toFixed(2), n: g.extent[3].toFixed(2) }) : grid?.problem || t('grid.shift.missing', { name: c.grid })) : t('grid.none')));
       if (g && here) { const inside = here[0] >= g.extent[0] && here[0] <= g.extent[2] && here[1] >= g.extent[1] && here[1] <= g.extent[3]; kids.push(el('p', { className: inside ? 'cv-note' : 'cv-crs-problem', dataset: { gridInside: inside ? '1' : '0' } }, t(inside ? 'grid.inside' : 'grid.outside'))); }
       const btns = [];
       for (const q of sug) if (q.name !== c.grid || !g) btns.push(el('button', { type: 'button', className: 'btn-line btn-sm-cc', dataset: { gridCdn: q.name } }, el('i', { className: 'bi bi-cloud-download', 'aria-hidden': 'true' }), ' ', t('grid.cdn', { label: q.label, size: (q.size / 1048576).toFixed(q.size < 1048576 ? 2 : 1) })));
@@ -199,14 +200,21 @@ export function install(host) {
       kids.push(el('p', { className: 'cv-note' }, t('grid.note')));
       gridSec.replaceChildren(...kids);
     }
-    async function useGrid(name, bytes) {
-      if (!ensureCurrent()) return;
+    let gridRequest = 0;
+    function gridOwner() {
+      const request = ++gridRequest, crs = JSON.stringify(p.state.crs);
+      return () => !done && ownsDocument() && gridRequest === request && JSON.stringify(p.state.crs) === crs;
+    }
+    async function useGrid(name, bytes, isCurrent) {
+      if (!ensureCurrent() || !isCurrent()) return;
       let info;
-      try { info = await loadGrid(name, bytes); } catch (e) { if (ensureCurrent()) renderGrid(e.message, true); return; }
-      if (!ensureCurrent()) return;
+      try { info = await loadGrid(name, bytes, { isCurrent, embedded: true }); }
+      catch (e) { if (ensureCurrent() && isCurrent()) renderGrid(e.message, true); return; }
+      if (!ensureCurrent() || !isCurrent()) return;
       const before = current;
       p.crsGrids.set(info.name, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
-      p.change(t('grid.undo.on'), (st) => { st.crs = { ...st.crs, grid: info.name }; });
+      const changed = p.change(t('grid.undo.on'), (st) => { st.crs = { ...st.crs, grid: info.name }; });
+      if (!changed) p.touch('crs-grid');   // Different bytes can replace a file with the same name.
       current = p.state.crs;
       for (const f of reg.crsChange) { try { f(before, current, { converted: false }); } catch (e) { console.warn(e); } }
       renderNow(); renderGrid(t('grid.done', { name: info.name }));
@@ -218,19 +226,20 @@ export function install(host) {
       if (!b || !ensureCurrent()) return;
       if (b.dataset.gridFile !== undefined) gridIn.click();
       else if (b.dataset.gridOff !== undefined) {
+        gridRequest++;
         const before = current;
         p.change(t('grid.undo.off'), (st) => { const c = { ...st.crs }; delete c.grid; st.crs = c; });
         current = p.state.crs;
         for (const f of reg.crsChange) { try { f(before, current, { converted: false }); } catch (err) { console.warn(err); } }
         renderNow(); renderGrid(t('grid.offdone')); showLatLon(host.cursor);
       } else if (b.dataset.gridCdn) {
-        const name = b.dataset.gridCdn;
+        const name = b.dataset.gridCdn, isCurrent = gridOwner();
         b.disabled = true; renderGrid(t('grid.fetching', { name }));
         try {
           const r = await fetch(GRID_CDN + name);
           if (!r.ok) throw new Error(t('grid.fetch.http', { status: r.status }));
-          await useGrid(name, new Uint8Array(await r.arrayBuffer()));
-        } catch (err) { if (ensureCurrent()) renderGrid(t('grid.fetch.fail', { msg: err.message }), true); }
+          await useGrid(name, new Uint8Array(await r.arrayBuffer()), isCurrent);
+        } catch (err) { if (isCurrent()) renderGrid(t('grid.fetch.fail', { msg: err.message }), true); }
       }
     });
     gridIn.addEventListener('change', async () => {
@@ -238,7 +247,8 @@ export function install(host) {
       gridIn.value = '';
       if (!f || !ensureCurrent()) return;
       if (f.size > 20 * 1024 * 1024) { renderGrid(t('grid.big'), true); return; }
-      await useGrid(f.name, new Uint8Array(await f.arrayBuffer()));
+      const isCurrent = gridOwner();
+      await useGrid(f.name, new Uint8Array(await f.arrayBuffer()), isCurrent);
     });
     const dlg = el('dialog', { className: 'cv-dialog cv-crs', 'aria-labelledby': id + '-h', dataset: { crsDialog: mode } },
       el('form', { method: 'dialog', className: 'cv-dlg', onsubmit: (e) => e.preventDefault() },
@@ -339,12 +349,13 @@ export function install(host) {
     function renderChosen() {
       problemBox.hidden = true;
       if (!chosen) { chosenBox.replaceChildren(el('p', { className: 'cv-note' }, pick ? t('crs.d.chosen.none') : current ? t('crs.d.chosen.keep') : t('crs.d.chosen.none'))); updateApply(); return; }
-      const d = describe(chosen.crs);
+      const displayed = baseCrs();
+      const d = describe(displayed);
       const kids = [facts(d)];
       for (const n of chosen.notes || []) kids.push(el('p', { className: 'cv-note' }, n));
       if (mid && hasData && chosen.crs.unit !== 'deg') {
         try {
-          const [lon, lat] = frame({ ...chosen.crs, local: null }).toLonLat(mid.x, mid.y);
+          const [lon, lat] = frame(displayed).toLonLat(mid.x, mid.y);
           const a = chosen.entry?.area, inside = a ? lat >= a[1] && lat <= a[3] && (a[0] <= a[2] ? lon >= a[0] && lon <= a[2] : lon >= a[0] || lon <= a[2]) : null;
           kids.push(el('p', { className: 'cv-note' }, t(inside === false ? 'crs.d.mid.out' : inside ? 'crs.d.mid.in' : 'crs.d.mid', { at: latLonText(lon, lat, host.settings.latlon) })));
         } catch { kids.push(el('p', { className: 'cv-note' }, t('crs.d.mid.cannot'))); }
@@ -365,7 +376,17 @@ export function install(host) {
       for (const pnl of dlg.querySelectorAll('[data-crs-panel]')) pnl.hidden = pnl.dataset.crsPanel !== gmode;
       if (gmode === 'local') renderLocal();
     }
-    const baseCrs = () => (chosen ? chosen.crs : current ? { ...current, local: null } : null);
+    function baseCrs() {
+      const system = chosen?.crs ?? current;
+      if (!system) return null;
+      const base = { ...system, local: null };
+      if (!pick && sameBase(current, base)) {
+        if (current.grid) base.grid = current.grid;
+        else delete base.grid;
+        return retainGridBinding(current, base);
+      }
+      return retainGridBinding(system, base);
+    }
     function computeFactor() {
       const b = baseCrs();
       if (!b) { factorsBox.replaceChildren(el('p', { className: 'cv-crs-problem' }, t('crs.d.pickfirst2'))); return null; }
@@ -375,7 +396,7 @@ export function install(host) {
       if (z === null) { const g = p.eg?.().surface?.elevationAt?.(x, y); z = Number.isFinite(g) ? g : 0; atZ.value = Number.isFinite(g) ? g.toFixed(2) : '0'; }
       if (!Number.isFinite(z)) { factorsBox.replaceChildren(el('p', { className: 'cv-crs-problem' }, t('crs.d.factor.z'))); return null; }
       let r;
-      try { r = groundFactor(sameBase(current, b) && current.local ? { ...b, local: current.local } : b, x, y, z); } catch { r = null; }
+      try { r = groundFactor(sameBase(current, b) && current.local ? retainGridBinding(b, { ...b, local: current.local }) : b, x, y, z); } catch { r = null; }
       if (!r || !Number.isFinite(r.k)) { factorsBox.replaceChildren(el('p', { className: 'cv-crs-problem' }, t('crs.d.factor.out'))); return null; }
       const ppm = (v) => ((v - 1) * 1e6).toFixed(1) + ' ppm';   // i18n-ignore: unit symbol
       factorsBox.replaceChildren(
@@ -545,10 +566,10 @@ export function install(host) {
       }
       const before = current;
       if (convert) {
-        const fOld = frame(current), fNew = frame(next).from({ ...current, local: null });
-        const map = (x, y) => { const g = fOld.toGrid(x, y); return fNew(g[0], g[1]); };
         let res = null, err = null;
         try {
+          const fOld = frame(current), fNew = frame(next).from(current);
+          const map = (x, y) => fNew(...fOld.toGrid(x, y));
           p.editPoints(t('crs.d.undo.convert', { crs: next.name }), (pts, st) => {
             res = reprojectProject(st, pts, map);
             if (res.refused) return null;

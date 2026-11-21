@@ -237,6 +237,7 @@ export function createLive(getProject) {
     CORE.apply(d, ops);
     const seq = p.state.seq;
     p.restore(JSON.stringify(Object.assign(d.state, { seq })));
+    p.syncCrsGrid();   // Consumers can project from the restored CRS before the queued change notification.
     if (ops.some((o) => o.path && o.path[0] === 'points')) { p.points = d.points; p.pointsVersion++; }
     p.cache?.clear?.();
     p.version++;
@@ -297,6 +298,7 @@ export function createLive(getProject) {
       p.cache?.clear?.();
       claimIds();
       p.documentGeneration++;
+      p.crsGrids.clear();   // A Live snapshot carries the CRS record, with no embedded grid bytes.
       p.version++; p.emit('load');
     },
     hash() { const d = doc(); delete d.state.seq; return canonical(d); },

@@ -24,7 +24,7 @@
 import { readGisFiles, planImport, importInto, srcName, middleLonLat, resolveSrc, latLonPoints, crsFromLandXml } from './gis-read.js';
 import { gisOf, layerOf, featuresOf, gisExtents, gisScene, pickFeature, layerBounds, setLayer, removeLayer, moveLayers, useChoices, useForSurface, LAYER_TOKENS, tokenLabel } from './gis-layers.js';
 import { exportKinds, exportProject } from './gis-export.js';
-import { crsProblem, suggest, crsFromEntry } from './crs.js';
+import { crsProblem, suggest, crsFromEntry, requireCrsGrid } from './crs.js';
 import { bounds, vertexCount, KIND } from './gis-geom.js';
 import { t } from './i18n.js';   // 0.4 V6 strings
 
@@ -428,6 +428,15 @@ export async function install(host) {
       const why = crsProblem(crs, s.units);
       if (why) { host.say(why); return null; }
       set = crs;
+    }
+    if (crs.grid) {
+      const load = project.crsGridLoad;
+      if (load?.name === crs.grid) {
+        await load.ready;
+        if (project.crsGridLoad !== load || P() !== project || project.documentGeneration !== generation || !isCurrent()) return null;
+        crs = project.state.crs;
+      }
+      requireCrsGrid(crs);
     }
     const r = latLonPoints(points, crs);
     const cname = crs.local ? t('vec.crs.ground', { crs: crs.name }) : crs.name;

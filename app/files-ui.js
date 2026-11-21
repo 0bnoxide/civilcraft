@@ -51,9 +51,13 @@ export function mountFiles(ctx) {
   async function openProject(text, name) {
     const from = ctx.openingFrom;   // read now: it is cleared once the opening call returns, before the discard question
     let r;
-    try { r = Project.fromJSON(typeof text === 'string' ? JSON.parse(text) : parseJsonParts(text)); } catch (err) { say(t('cv.open.failed', { file: name, why: err.message })); return; }
+    try { r = Project.fromJSON(typeof text === 'string' ? JSON.parse(text) : parseJsonParts(text), { deferGrid: true }); } catch (err) { say(t('cv.open.failed', { file: name, why: err.message })); return; }
     if (!(await confirmDiscard())) return;
-    ctx.project = r.project; ctx.project.saved = ctx.project.version; ctx.projectTarget = from; rebind();
+    ctx.project.useCrsGrids(null);
+    const project = r.project;
+    ctx.project = project; project.saved = project.version; ctx.projectTarget = from;
+    project.useCrsGrids(() => ctx.project === project);
+    rebind();
     ctx.sel = null; ctx.selPvi = -1; ctx.lastReport = r.notes.length ? r.notes : null;
     refresh(); fitAll();
     say(t('cv.opened', { file: name }));
@@ -165,8 +169,10 @@ export function mountFiles(ctx) {
       const project = ctx.project, generation = project.documentGeneration;
       const { units, crs, foot } = project.state;
       const unit = footOf(units, crs, foot), crsKey = JSON.stringify(crs ?? null);
+      const gridLoad = project.crsGridLoad;
       const current = () => {
         if (ctx.project !== project || project.documentGeneration !== generation) return false;
+        if (res.latlon && project.crsGridLoad !== gridLoad) return false;
         const s = project.state;
         // A Live edit can rebuild state without changing the coordinate inputs.
         return footOf(s.units, s.crs, s.foot) === unit && JSON.stringify(s.crs ?? null) === crsKey;
@@ -177,7 +183,9 @@ export function mountFiles(ctx) {
       if (res.latlon) {
         try { await gisLoad(); } catch { return; }
         if (!current()) return;
-        const r = ctx.gisReg.pointsLatLon ? await ctx.gisReg.pointsLatLon(res.points, name, current) : null;
+        let r;
+        try { r = ctx.gisReg.pointsLatLon ? await ctx.gisReg.pointsLatLon(res.points, name, current) : null; }
+        catch (err) { if (current()) say(err.message); return; }
         if (!current()) return;
         if (!r) { say(t('cv.imp.latlon.need', { file: name })); return; }
         pts = r.points; llNote = ' ' + r.note; llCrs = r.crs;
