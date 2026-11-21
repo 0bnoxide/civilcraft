@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /* SPDX-License-Identifier: Apache-2.0 */
-// Slice 4: the project IFC export (ifc-civil-model.js + ifc-civil.js) writes every surface the project keeps, not only the existing
-// ground and the graded surface: the other TINs a LandXML file brought (state.moreSurfaces) go out as TERRAIN elements under their
-// own names, in IFC 4.3, IFC4 and IFC2x3, and ifc-civil-read.js reads them back with the same names and triangles. Synthetic fixture inline.
+// Slice 4: the project IFC export (ifc-civil-model.js + ifc-civil.js) writes every surface and design profile the project keeps, not
+// only the existing ground, the graded surface and the design profile: the other TINs a LandXML file brought (state.moreSurfaces) go
+// out as TERRAIN elements under their own names; the design profile is named (profName) and each other design profile (moreProfiles)
+// is an IFC 4.3 child alignment with its own vertical layout (IFC4 / IFC2x3: CadCraft_Alignment.MoreProfiles). ifc-civil-read.js
+// reads them all back with the same names, triangles and PVIs, and the import keeps the profiles. Synthetic fixture inline.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -95,6 +97,56 @@ try {
   const p2 = site([{ name: 'FG Top', z0: 110 }, { name: 'Datum 2019', z0: 90 }]);
   p2.removeOtherSurface(p2.state.moreSurfaces[0].id);
   ok(JSON.stringify(IM.civilIfcModel(p2).surfaces.map((s) => s.name)) === JSON.stringify(['EG survey', 'Datum 2019']), 'FG Top removed: the IFC has the ground and Datum 2019');
+
+  section('every design profile goes into the IFC, under its own name, and comes back');
+  const MAIN = [{ sta: 0, z: 100, L: 0 }, { sta: 100, z: 102, L: 40 }, { sta: 280, z: 101, L: 0 }];
+  const ALT = { 'Alt A': [{ sta: 0, z: 99, L: 0 }, { sta: 150, z: 103, L: 60 }, { sta: 280, z: 100, L: 0 }], 'Alt B; low | "q"': [{ sta: 0, z: 98, L: 0 }, { sta: 280, z: 99.5, L: 0 }] };
+  const road = (more = true, profName = 'Main FG') => {
+    const q = site();
+    q.state.alignments.push({ id: q.nextId('a'), name: 'Road 1', start: 0, pis: [{ x: X0, y: Y0 }, { x: X0 + 200, y: Y0 + 200 }], pvis: MAIN.map((v) => ({ ...v })), ...(profName ? { profName } : {}),
+      ...(more ? { moreProfiles: Object.entries(ALT).map(([name, pvis]) => ({ name, pvis: pvis.map((v) => ({ ...v })) })) } : {}) });
+    return PJ.Project.fromJSON(JSON.parse(JSON.stringify(q.toJSON()))).project;
+  };
+  const near = (pv, want) => pv.length === want.length && pv.every((v, i) => Math.abs(v.sta - want[i].sta) < 1e-6 && Math.abs(v.z - want[i].z) < 1e-6 && Math.abs((v.L || 0) - want[i].L) < 1e-6);
+  const pr = road(), ma = IM.civilIfcModel(pr).alignments[0];
+  ok(ma.profName === 'Main FG' && JSON.stringify(ma.more.map((m) => m.name)) === JSON.stringify(Object.keys(ALT)) && ma.more.every((m) => m.v?.length), 'the model: the design profile\'s name and both other profiles, with vertical segments', { n: ma.profName, more: ma.more.map((m) => [m.name, m.v?.length]) });
+  for (const schema of SCHEMAS) {
+    const r = IW.writeCivilIfc(IM.civilIfcModel(pr), { schema, now: NOW });
+    if (schema === 'IFC4X3_ADD2') {
+      ok(r.counts.alignments === 1 && r.counts.profiles === 2, 'IFC 4.3: one alignment with two other profiles', r.counts);
+      const verts = [...r.text.matchAll(/IFCALIGNMENTVERTICAL\('[^']+',\$,'((?:[^']|'')*)'/g)].map((m) => m[1].replace(/''/g, "'"));
+      ok(JSON.stringify(verts) === JSON.stringify(['Main FG', ...Object.keys(ALT)]), 'IFC 4.3: three vertical layouts, each named', verts);
+      ok(/IFCRELAGGREGATES\([^;]*#\d+,\(#\d+,#\d+\)\);/.test(r.text), 'IFC 4.3: the two child alignments aggregated to the road');
+    } else ok(r.text.includes('MoreProfiles') && r.text.includes("'Main FG'"), `${schema}: the profiles in CadCraft_Alignment`);
+    const back = RD.readCivilIfc(new TextEncoder().encode(r.text), { units: 'm' });
+    ok(back.alignments.length === 1, `${schema}: read back as one alignment (the profiles are not alignments of their own)`, back.alignments.map((a) => a.name));
+    const b = back.alignments[0] || {};
+    ok(b.profName === 'Main FG' && near(b.pvis, MAIN), `${schema}: the design profile with its name and PVIs`, { n: b.profName, pv: b.pvis });
+    ok(JSON.stringify((b.moreProfiles || []).map((m) => m.name)) === JSON.stringify(Object.keys(ALT)), `${schema}: both other profiles, names kept`, b.moreProfiles?.map((m) => m.name));
+    ok((b.moreProfiles || []).every((m) => near(m.pvis, ALT[m.name])), `${schema}: with their PVIs`, b.moreProfiles);
+    ok(!back.notes.some((n) => /only adds a profile/.test(n)), `${schema}: no note that a profile was skipped`, back.notes);
+    if (IOS) {
+      const c = ios(r.text, 'profiles-' + schema + '.ifc');
+      ok(c.nproblems === 0, `${schema}: IfcOpenShell finds no schema or rule problems`, c.problems);
+      if (schema === 'IFC4X3_ADD2') {
+        ok(c.counts.IfcAlignment === 3 && c.tree['IfcAlignment > IfcAlignment'] === 1, 'IFC 4.3: IfcOpenShell sees the road and its two child alignments', { n: c.counts.IfcAlignment, tree: c.tree });
+        // its own geometry kernel on each child's gradient curve: the profile's elevations at both ends, along the road's full length
+        for (const [name, pv] of Object.entries(ALT)) {
+          const ax = c.alignments.find((x) => x.name === name)?.samples?.Axis, P = ax?.pts || [];
+          ok(!ax?.error && P.length > 2 && Math.abs(P[0][3] - pv[0].z) < 1e-3 && Math.abs(P[P.length - 1][3] - pv[pv.length - 1].z) < 1e-3, `IFC 4.3: IfcOpenShell evaluates ${name}'s gradient curve (ends at its PVI elevations)`, ax && { err: ax.error, a: P[0], b: P[P.length - 1] });
+        }
+      }
+    }
+    // the import keeps them (one undo step), and the project file keeps them
+    const into = new PJ.Project();
+    into.state.units = 'm';
+    RD.applyIfcImport(into, back, { eg: -1, refs: false, file: 'more.ifc' });
+    const ia = PJ.Project.fromJSON(JSON.parse(JSON.stringify(into.toJSON()))).project.state.alignments[0];
+    ok(ia?.profName === 'Main FG' && JSON.stringify(ia.moreProfiles?.map((m) => m.name)) === JSON.stringify(Object.keys(ALT)), `${schema}: opened, saved and reopened, the alignment keeps the name and both other profiles`, ia && { n: ia.profName, m: ia.moreProfiles?.map((m) => m.name) });
+  }
+  const plain = road(false, null), mp = IM.civilIfcModel(plain).alignments[0], rp = IW.writeCivilIfc(IM.civilIfcModel(plain), { now: NOW });
+  ok(mp.profName === 'Road 1 design' && !mp.more.length && rp.counts.profiles === 0, 'no other profiles: none written; the design profile is named "Road 1 design"', { n: mp.profName, c: rp.counts.profiles });
+  ok(RD.readCivilIfc(new TextEncoder().encode(rp.text), { units: 'm' }).alignments[0]?.moreProfiles === undefined, 'and none read back');
 } catch (e) {
   fail++;
   console.log('  FAIL threw: ' + (e.stack || e));

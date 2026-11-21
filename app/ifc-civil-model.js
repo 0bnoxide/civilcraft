@@ -16,6 +16,7 @@
  *
  * model = { name, units, foot (Slice 2: the project's stated foot, or null), crs, lat, lon,
  *   alignments: [{ id, name, start, end, length, h, v | null, pis, pvis, poly: [{x, y, z | null, sta}], superEvents: [{ sta, L, R }], design }]
+ *     (profName: Slice 4, the design profile's name; more: [{ name, pvis, v | null }] the alignment's other design profiles)
  *     (design: 0.7.1 71.24 { speed, unit 'km/h' | 'mph', cls } | null)
  *     (superEvents: the corridor's superelevation transition stations with the lanes' fall-away slopes, corridor.js sign)
  *   corridors: [{ id (the alignment's), name, alignment, standIn, from, to, parts: [{ part, side, mesh, area, length }],
@@ -129,7 +130,11 @@ function alignmentOf(project, a) {
   // 0.7.1 71.26 / B: a railway's cant (rail.js cantPlan: IfcAlignmentCant's segments) and its settings
   const plan = a.rail?.on ? project.railPlan?.(a) : null;
   const cant = plan?.segments?.length ? { base: baseOf(a.rail), segments: plan.segments, curves: plan.curves || [] } : null;
-  return { id: a.id, name: a.name, start: al.start, end: al.end, length: al.length, h: horizontalSegments(al), v, pis: (a.pis || []).map((p) => ({ ...p })), pvis: (a.pvis || []).map((p) => ({ ...p })), poly, superEvents: [], design: a.design || null, rail: a.rail?.on ? a.rail : null, cant, al, prof };
+  // Slice 4: the design profile's name (its source's, else "<alignment> design", English like the rest of the file) and the other design
+  // profiles, each with its PVIs and its vertical segments (null when it does not reach the alignment)
+  const profName = a.profName || a.name + ' design';   // i18n-ignore: IFC file data
+  const more = (project.otherProfiles?.(a) || []).map((x, i) => (x.profile?.ok ? { name: x.name, pvis: a.moreProfiles[i].pvis.map((p) => ({ ...p })), v: verticalSegments(x.profile, al) } : null)).filter(Boolean);
+  return { id: a.id, name: a.name, profName, more, start: al.start, end: al.end, length: al.length, h: horizontalSegments(al), v, pis: (a.pis || []).map((p) => ({ ...p })), pvis: (a.pvis || []).map((p) => ({ ...p })), poly, superEvents: [], design: a.design || null, rail: a.rail?.on ? a.rail : null, cant, al, prof };
 }
 
 // ---------------------------------------------------------------------------- corridors

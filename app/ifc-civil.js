@@ -18,7 +18,9 @@
  *                for; its geometry: 'FootPrint' IfcCompositeCurve of IfcCurveSegments (IfcLine / IfcCircle / IfcClothoid parents) and
  *                'Axis' IfcGradientCurve (IfcLine / IfcPolynomialCurve) — or 'Axis' the composite curve with no profile; the start
  *                station as an IfcReferent STATION (Pset_Stationing) and superelevation transitions as IfcReferent SUPERELEVATIONEVENT
- *                (Pset_Superelevation, one per side) on IfcLinearPlacement. No IfcAlignmentCant: cant is the rail layout (it needs a
+ *                (Pset_Superelevation, one per side) on IfcLinearPlacement. Slice 4: the vertical layout is named as the design profile;
+ *                each other design profile is a child IfcAlignment (aggregated to its alignment) nesting only its own named
+ *                IfcAlignmentVertical, its 'Axis' an IfcGradientCurve on the parent's composite curve (counts.profiles). No IfcAlignmentCant: cant is the rail layout (it needs a
  *                rail head distance); a road's superelevation is these events plus the rolled road surfaces.
  *                Each corridor: IfcRoad (in the site) > IfcRoadPart CARRIAGEWAY / SHOULDER / ROADSIDE / SIDEWALK holding IfcPavement
  *                (lanes, shoulders, gutters, walks), IfcKerb (curbs), IfcGeographicElement (planting strips) as surfaces from the
@@ -35,7 +37,8 @@
  *   IFC2X3       as IFC4 with IfcBuildingElementProxy for civil elements, IfcFlowSegment for pipes, IfcSystem, surfaces as
  *                IfcShellBasedSurfaceModel (closed solids IfcFacetedBrep), georeferencing as ePSet_MapConversion / ePSet_ProjectedCRS
  *                on the site (buildingSMART's georeferencing guide for IFC2x3), an IfcOwnerHistory on every rooted entity.
- * Every schema: property set CadCraft_Alignment carries the PI and PVI tables as text, so CivilCraft reads its own file back exactly
+ * Every schema: property set CadCraft_Alignment carries the PI and PVI tables as text (Slice 4: and ProfileName, MoreProfiles: the
+ * other design profiles as JSON [{ name, pvis: [[sta, z, L]] }]), so CivilCraft reads its own file back exactly
  * whatever the schema (ifc-civil-read.js prefers the 4.3 layout when there is one).
  *
  * Units and place (ifc-massing.js's rules): the file's length unit is the project's (metre, or the US survey foot / foot as an
@@ -152,7 +155,7 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
   const id = (s) => S(guid(seed + '|' + s));
   const unit = fileUnit(units, crs, model.foot), um = unit === 'm' ? 1 : unit === 'ft' ? 0.3048 : FT_US_M, m2 = (a) => a * um * um, m3 = (v) => v * um * um * um;
   const meshArea = (m) => { let s = 0; for (let i = 0; i < m.idx.length; i += 3) s += triArea(m.pos, m.idx[i], m.idx[i + 1], m.idx[i + 2]); return m2(s); };
-  const counts = { alignments: 0, segments: 0, referents: 0, roads: 0, roadParts: 0, courses: 0, elements: 0, earthworks: 0, surfaces: 0, triangles: 0, pads: 0, walls: 0, pipes: 0, structures: 0, parcels: 0, landscape: 0, masses: 0, psets: 0, quantities: 0 };
+  const counts = { alignments: 0, profiles: 0, segments: 0, referents: 0, roads: 0, roadParts: 0, courses: 0, elements: 0, earthworks: 0, surfaces: 0, triangles: 0, pads: 0, walls: 0, pipes: 0, structures: 0, parcels: 0, landscape: 0, masses: 0, psets: 0, quantities: 0 };
 
   // ---- owner history (IFC2x3 requires one on every rooted entity), contexts, units, project
   let OH = null;
@@ -334,7 +337,9 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
     const props = [['StartStation', a.start, 'len'], ['EndStation', a.end, 'len'], ['Length', a.length, 'len'], ['ProjectUnits', units === 'm' ? 'metre' : footOf(units, crs, model.foot) === 'ft' ? 'foot' : 'US survey foot', 'label'],
       ['PIs', a.pis.map((p) => [...[p.x, p.y, p.r || 0, p.ls1 || p.ls || 0, p.ls2 || p.ls || 0].map((v) => +(+v).toFixed(6)), ...(p.tr || p.cant ? [p.tr || '', +(+(p.cant || 0)).toFixed(3)] : [])].join(',')).join(';'), 'text'],   // + transition kind and cant (mm): 71.26 / B
       ['PVIs', a.pvis.map((p) => [p.sta, p.z, p.L || 0].map((v) => +(+v).toFixed(6)).join(',')).join(';'), 'text'],
-      ['CurveCount', a.h.filter((s) => s.type !== 'LINE').length, 'int'], ...designProps(a.design), ['RailSettings', a.rail ? JSON.stringify(a.rail) : null, 'text']];
+      ['CurveCount', a.h.filter((s) => s.type !== 'LINE').length, 'int'], ...designProps(a.design), ['RailSettings', a.rail ? JSON.stringify(a.rail) : null, 'text'],
+      // Slice 4: the design profile's name and the alignment's other design profiles (name and PVI table each), so every schema keeps them
+      ['ProfileName', a.pvis.length >= 2 ? a.profName : null, 'label'], ['MoreProfiles', a.more?.length ? JSON.stringify(a.more.map((m) => ({ name: m.name, pvis: m.pvis.map((p) => [p.sta, p.z, p.L || 0].map((v) => +(+v).toFixed(6))) }))) : null, 'text']];
     if (!X4) {
       // IFC4 / IFC2x3: an element with the 3D centreline as a polyline (and the PI / PVI tables in its pset)
       const p3 = a.poly.filter((q) => fin(q.z)), reps = [];
@@ -410,9 +415,9 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
     const horiz = root('IfcAlignmentHorizontal', tag + '|h', {});
     root('IfcRelNests', tag + '|nest-h', { RelatingObject: horiz, RelatedObjects: L(hSegs) });
     const layouts = [horiz], reps = [];
-    // vertical
-    if (a.v?.length) {
-      const vSegs = [], vCurve = [], V = a.v;
+    /** A vertical layout (V: ifc-civil-model.js verticalSegments) on this alignment's basis curve: its IfcAlignmentVertical and IfcGradientCurve. */
+    const vertical = (V, tag, name) => {
+      const vSegs = [], vCurve = [];
       V.forEach((s, i) => {
         const nx = V[i + 1], d0 = s.sta - a.start;
         const flat = (q) => !q || q.type === 'CONSTANTGRADIENT';   // curvature 0 (the zero-length end segment too)
@@ -429,10 +434,14 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
       vSegs.push(root('IfcAlignmentSegment', tag + '|v|end', { DesignParameters: w.ent('IfcAlignmentVerticalSegment', { StartDistAlong: R(dEnd), HorizontalLength: '0.', StartHeight: R(zEnd), StartGradient: R(last.g1, 12), EndGradient: R(last.g1, 12), PredefinedType: '.CONSTANTGRADIENT.' }) }));
       const thE = Math.atan(last.g1);
       vCurve.push(w.ent('IfcCurveSegment', { Transition: '.DISCONTINUOUS.', Placement: w.ent('IfcAxis2Placement2D', { Location: w.pt([dEnd, zEnd]), RefDirection: w.dir([Math.cos(thE), Math.sin(thE)]) }), SegmentStart: 'IFCLENGTHMEASURE(0.)', SegmentLength: 'IFCLENGTHMEASURE(0.)', ParentCurve: w.one('IfcLine', { Pnt: O2, Dir: w.one('IfcVector', { Orientation: X2D, Magnitude: '1.' }) }) }));
-      const vert = root('IfcAlignmentVertical', tag + '|v', {});
+      const vert = root('IfcAlignmentVertical', tag + '|v', { Name: S(name) });
       root('IfcRelNests', tag + '|nest-v', { RelatingObject: vert, RelatedObjects: L(vSegs) });
+      return { vert, grad: w.ent('IfcGradientCurve', { Segments: L(vCurve), SelfIntersect: '.F.', BaseCurve: comp }) };
+    };
+    // vertical: the design profile, under its name (Slice 4)
+    if (a.v?.length) {
+      const { vert, grad } = vertical(a.v, tag, a.profName);
       layouts.push(vert);
-      const grad = w.ent('IfcGradientCurve', { Segments: L(vCurve), SelfIntersect: '.F.', BaseCurve: comp });
       const cantCurve = a.cant && X4 ? cantLayout(a, tag, grad, layouts) : null;   // 0.7.1 71.26 / B: a railway's cant
       reps.push([cFoot, 'FootPrint', 'Curve2D', [comp]], [cAxis, 'Axis', 'Curve3D', [cantCurve || grad]]);
     } else reps.push([cAxis, 'Axis', 'Curve2D', [comp]]);
@@ -461,6 +470,17 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
     });
     root('IfcRelNests', tag + '|nest-ref', { RelatingObject: alEl, RelatedObjects: L(refs) });
     pset([alEl], 'CadCraft_Alignment', props, tag);
+    // Slice 4: each other design profile as a child alignment (IFC 4.3 "reusing horizontal layout"): it nests only its own
+    // IfcAlignmentVertical, named as the profile, and its Axis is a gradient curve on this alignment's basis curve
+    const kids = [];
+    (a.more || []).forEach((m, j) => {
+      if (!m.v?.length) return;
+      const ctag = tag + '|p|' + j, { vert, grad } = vertical(m.v, ctag, m.name);
+      const child = root('IfcAlignment', ctag, { Name: S(m.name), ObjectPlacement: place(null), Representation: shape([[cAxis, 'Axis', 'Curve3D', [grad]]]), PredefinedType: '.NOTDEFINED.' });
+      root('IfcRelNests', ctag + '|nest', { RelatingObject: child, RelatedObjects: L([vert]) });
+      kids.push(child); counts.profiles++;
+    });
+    if (kids.length) root('IfcRelAggregates', tag + '|profiles', { RelatingObject: alEl, RelatedObjects: L(kids) });
     alOut.set(a.id, { el: alEl, curve: comp });
   }
 
