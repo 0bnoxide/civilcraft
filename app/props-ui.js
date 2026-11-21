@@ -37,6 +37,11 @@ export function mountProps(ctx) {
       out.push(el('h3', { className: 'cv-h3' }, t('cv.props.pads')));
       out.push(el('ul', { className: 'cv-plainlist' }, ...s.pads.map((d) => el('li', {}, el('button', { type: 'button', className: 'cv-linkbtn', onclick: () => { ctx.sel = { kind: 'pad', id: d.id }; refresh(); } }, d.name), ' · ', t('cv.pad.el', { z: fixed(Number(d.z), 2) })))));
     }
+    if ((s.moreSurfaces || []).length) {   // Slice 3: the other surfaces a file brought (kept and exported; not used for design)
+      out.push(el('h3', { className: 'cv-h3' }, t('cv.props.moresurf')), el('p', { className: 'cv-note' }, t('cv.props.moresurf.note')));
+      out.push(el('ul', { className: 'cv-plainlist', 'data-more-surfaces': '' }, ...s.moreSurfaces.map((x) => el('li', {}, x.name, ' · ', t('cv.props.moresurf.row', { n: x.tin?.faces?.length || 0, count: num(x.tin?.faces?.length || 0) }), ' ',
+        el('button', { type: 'button', className: 'cv-x', 'data-remove-surface': x.id, 'aria-label': t('cv.props.moresurf.remove.of', { name: x.name }), onclick: () => ctx.project.removeOtherSurface(x.id) }, el('i', { className: 'bi bi-x', 'aria-hidden': 'true' }))))));
+    }
     if (s.pads.length || s.alignments.some((a) => a.corridor?.on || (a.corridors || []).some((c) => c.on)) || (s.terrainTemplates || []).length) out.push(volumeBlock());
     out.push(...tpUi.terrainBlock());   // 0.9 WB.6: terrain templates
     out.push(...pcUi.block());   // 0.4 V21
