@@ -3044,6 +3044,7 @@
   "crs.reproject.tin": "The surface came from a LandXML file as triangles, and those cannot be converted here. Use “Rebuild the surface from the points” first, or convert the file before opening it.",
   "crs.reproject.coord": "A coordinate could not be converted (it is outside what the system can handle).",
   "crs.reproject.point": "Point {n} could not be converted.",
+  "crs.reproject.layers": "The coordinate system of the GIS layers could not be determined. Check the layer coordinates before converting the project.",
   "mapl.err.404": "The server has no picture for part of this area (404).",
   "mapl.http.status": "The server answered {status}.",
   "mapl.http.404": "The server answered 404 (not found): check the URL.",

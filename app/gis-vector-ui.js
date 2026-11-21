@@ -22,9 +22,10 @@
  */
 
 import { readGisFiles, planImport, importInto, srcName, middleLonLat, resolveSrc, latLonPoints, crsFromLandXml } from './gis-read.js';
-import { gisOf, layerOf, featuresOf, gisExtents, gisScene, pickFeature, layerBounds, setLayer, removeLayer, moveLayers, useChoices, useForSurface, LAYER_TOKENS, tokenLabel } from './gis-layers.js';
+import { gisOf, layerOf, featuresOf, gisExtents, gisScene, pickFeature, layerBounds, setLayer, removeLayer, reprojectLayers, useChoices, useForSurface, LAYER_TOKENS, tokenLabel } from './gis-layers.js';
 import { exportKinds, exportProject } from './gis-export.js';
 import { crsProblem, suggest, crsFromEntry, requireCrsGrid } from './crs.js';
+import { embeddedGridLoads, retainGridBinding } from './crs-grid-state.js';
 import { bounds, vertexCount, KIND } from './gis-geom.js';
 import { t } from './i18n.js';   // 0.4 V6 strings
 
@@ -121,7 +122,13 @@ export async function install(host) {
   // ---------------------------------------------------------------- the left panel: GIS layers
   const panel = host.ui.gisLayers || host.root.querySelector('[data-gis-layers]');
   let unsub = null;
-  function watch() { unsub?.(); unsub = P().on(() => renderPanel()); renderPanel(); }
+  function watch() {
+    unsub?.();
+    const project = P();
+    const update = () => { trackLayers(project); renderPanel(); };
+    unsub = project.on(update);
+    update();
+  }
   reg.onProject.push(watch);
   function renderPanel() {
     if (!panel) return;
@@ -401,19 +408,123 @@ export async function install(host) {
   }
 
   // ---------------------------------------------------------------- the project's system changed
-  // (before, after, { converted }) — builder C passes converted = the project's coordinates were converted into the new
-  // system: the GIS layers then follow at once (their own undo step, said); otherwise nothing moved, so ask
-  reg.crsChange.push(async (before, after, opts = {}) => {
-    const layers = gisOf(P()).layers;
-    if (!layers.length || !before || !after) return;
-    if (before.proj4 === after.proj4 && JSON.stringify(before.local) === JSON.stringify(after.local)) return;
-    const move = () => moveLayers(P(), before, after);
-    if (opts.converted) { move(); host.say(t('vec.move.converted', { crs: after.name })); return; }
+  const samePlacement = (a, b) => a?.proj4 === b?.proj4 && JSON.stringify(a?.local ?? null) === JSON.stringify(b?.local ?? null);
+  const sameCrs = (a, b) => samePlacement(a, b) && a?.grid === b?.grid && a?.code === b?.code && a?.unit === b?.unit
+    && embeddedGridLoads.get(a) === embeddedGridLoads.get(b);
+  const copyCrs = (crs) => retainGridBinding(crs, structuredClone(crs));
+  const sameGeometry = (a, b) => a === b || (!!b && a.length === b.length && a.every((f, i) => f.g === b[i].g));
+  const sameLayerData = (a, b) => a.size === b.size && [...a].every(([id, rows]) => sameGeometry(rows, b.get(id)));
+  let tracked = null;
+
+  function layerSource(record, rows) {
+    const source = record.sources.get(rows);
+    // An earlier declaration cannot give coordinates a frame after the project CRS was cleared.
+    return source?.declaration && source.declaration !== record.declaration ? null : source?.crs;
+  }
+
+  function trackLayers(project) {
+    const data = new Map();
+    for (const { id } of gisOf(project).layers) {
+      const rows = project.gisFeatures.get(id);
+      if (rows?.length) data.set(id, rows);
+    }
+    const crs = project.state.crs, generation = project.documentGeneration;
+    if (tracked?.project !== project || tracked.generation !== generation) {
+      const sources = new WeakMap(), selected = copyCrs(crs);
+      // A normal Open loads geometry in the saved project frame. Live keeps the prior document's local geometry.
+      const source = tracked?.project === project ? undefined : { crs: selected };
+      for (const rows of project.gisFeatures.values()) sources.set(rows, source);
+      tracked = { project, generation, data, sources, declaration: null, selected, offer: null };
+      return tracked;
+    }
+
+    const { data: previous, sources, selected } = tracked;
+    const changed = !sameCrs(crs, selected), next = changed ? copyCrs(crs) : selected;
+    const aligned = [...previous.values()].every((rows) => {
+      const source = layerSource(tracked, rows);
+      return source !== undefined && sameCrs(source, selected);
+    });
+    // A first CRS labels unreferenced geometry. An import can add already projected rows in the same step.
+    const firstAssignment = !selected && !!crs && aligned;
+    const relabeled = firstAssignment || samePlacement(crs, selected);
+    const defaultSource = !previous.size || (relabeled && aligned) ? { crs: next } : undefined;
+    // Revoke the first label only when that placement is cleared. Layers left in an earlier frame still use it.
+    let declaration = tracked.declaration;
+    if (firstAssignment) declaration = { crs: next };
+    else if (!crs && declaration && samePlacement(selected, declaration.crs)) declaration = null;
+    for (const [id, rows] of data) {
+      if (!sources.has(rows)) {
+        const prior = previous.get(id);
+        // Attribute edits preserve geometry. Remember unknown sources too, so Undo cannot assign them a frame.
+        sources.set(rows, sameGeometry(rows, prior) ? sources.get(prior) : defaultSource);
+      }
+      const source = layerSource(tracked, rows);
+      if (changed && relabeled && source !== undefined && sameCrs(source, selected)) {
+        sources.set(rows, { crs: next, declaration: firstAssignment ? declaration : sources.get(rows).declaration });
+      }
+    }
+    if (changed) tracked.offer = null;
+    tracked.data = data;
+    tracked.declaration = declaration;
+    tracked.selected = next;
+    return tracked;
+  }
+
+  function sourceOf(record) {
+    let source;
+    for (const rows of record.data.values()) {
+      const crs = layerSource(record, rows);
+      if (crs === undefined || (source !== undefined && !sameCrs(crs, source))) return undefined;
+      source = crs;
+    }
+    return source;
+  }
+
+  const ownsTarget = (record, target) => tracked === record && P() === record.project &&
+    record.project.documentGeneration === record.generation && sameCrs(record.project.state.crs, target);
+
+  function prepareLayerMove(record, source, target) {
+    const { project, data } = record;
+    const moved = reprojectLayers(data, source, target);
+    return (message) => {
+      if (!ownsTarget(record, target) || !sameLayerData(data, trackLayers(project).data)) return;
+      const applied = project.editGis(t('layers.undo.moveto', { crs: target.name }), (features) => {
+        for (const [id, rows] of moved) {
+          const active = features.get(id);
+          // Preserve any attribute edits made when the design conversion notified listeners.
+          const next = active === data.get(id) ? rows : rows.map(({ g }, i) => ({ g, p: active[i].p }));
+          record.sources.set(next, { crs: target });
+          features.set(id, next);
+        }
+        return features;
+      });
+      if (applied && ownsTarget(record, target)) host.say(t(message, { crs: target.name }));
+    };
+  }
+
+  // Explicit Convert preflights both the source and the reprojection before editing any design coordinates.
+  reg.prepareGisMove = (target) => {
+    const record = trackLayers(P());
+    if (!record.data.size) return null;
+    const source = sourceOf(record);
+    if (!source) throw new Error(t('crs.reproject.layers'));
+    return samePlacement(source, target) ? null : prepareLayerMove(record, source, copyCrs(target));
+  };
+
+  reg.crsChange.push(async (before, after, { converted } = {}) => {
+    const record = trackLayers(P());
+    if (!before || !after || converted || !ownsTarget(record, after)) return;
+    const { data } = record, source = sourceOf(record);
+    if (!source || samePlacement(before, after) || samePlacement(source, after)) return;
+    const target = copyCrs(after), offer = {};
+    record.offer = offer;
     const named = (c) => (c.local ? t('vec.crs.ground', { crs: c.name }) : c.name);
-    const c = await host.ask({ title: t('vec.move.title'), text: t('vec.move.text', { before: named(before), after: named(after) }), buttons: [['cancel', t('vec.move.leave'), 'btn-line'], ['move', t('vec.move.go'), 'btn-plot']] });
-    if (c !== 'move') return;
-    move();
-    host.say(t('vec.move.done', { crs: after.name }));
+    const answer = await host.ask({ title: t('vec.move.title'), text: t('vec.move.text', { before: named(source), after: named(target) }), buttons: [['cancel', t('vec.move.leave'), 'btn-line'], ['move', t('vec.move.go'), 'btn-plot']] });
+    if (record.offer !== offer) return;
+    record.offer = null;
+    if (answer !== 'move' || !ownsTarget(record, target) || !sameLayerData(data, trackLayers(record.project).data)) return;
+    try { prepareLayerMove(record, source, target)('vec.move.done'); }
+    catch (e) { if (ownsTarget(record, target)) host.say(e.message || t('crs.reproject.coord')); }
   });
 
   // ---------------------------------------------------------------- latitude/longitude point files, LandXML systems
