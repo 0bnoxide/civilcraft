@@ -67,6 +67,7 @@ export function landXmlOf(p, { date } = {}) {
   const s = p.state, r = p.eg();
   const surfaces = [];
   if (r.surface) surfaces.push({ name: s.surface.name || t('surface.eg'), desc: t('surface.eg'), surface: r.surface, breaklines: p.egBreaklines(), boundary: s.surface.boundary });
+  for (const x of p.otherSurfaces()) if (x.surface) surfaces.push({ name: x.name, desc: x.desc, surface: x.surface, breaklines: x.breaklines, boundary: x.boundary });   // Slice 3: the other surfaces a file brought
   const g = p.graded();
   if (g.surface) surfaces.push({ name: t('cv.lx.proposed'), desc: t('cv.lx.proposed.desc', { n: s.pads.length }), surface: g.surface });
   return writeLandXml({

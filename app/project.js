@@ -29,12 +29,15 @@
  *   p.railPlan(a) (cantPlan), p.railWarnings(); its corridor is then built as a track (corridor.js asm.rail via railAsm).
  *   alignments may carry eqs: [{ internal, ahead, back?, desc? }] (station equations; every stored station stays internal: alignment.js)
  *   and profName: the design profile's name from its source (LandXML ProfAlign); export writes it back (Slice 3; absent: "<alignment> design")
- *   and moreProfiles: [{ name, pvis }] — its other design profiles (Slice 3): kept, saved and exported, not used for design
+ *   alignments may carry moreProfiles: [{ name, pvis }] — its other design profiles (Slice 3): kept, saved and exported, not used for design
  *   until one is chosen (p.useOtherProfile(alignmentId, i) swaps it with pvis in one undo step); p.otherProfiles(a) [{name, profile}]
  *   alignments also carry corridor: null | { on, lane, laneSlope, shoulder, shoulderSlope, cut, fill, step, super?, targets? (0.6
  *   WL.25: corridor.js cleanTargets; corridorOrder() grades a corridor after the ones it targets) } (corridor.js;
  *   super: superelev.js, 0.4 V18)
  *   and sampling: null | { step, left, right, extra: [sta] } (0.4 V13 sample lines; p.sections(a), sections.js)
+ *   state.moreSurfaces?: [{ id ts<n>, name, desc?, tin: {pts, faces}, breaklines?, boundary? }] — Slice 3: the other surfaces (TINs) a file
+ *   brought besides the existing ground: kept, saved and exported, not used for design; p.otherSurfaces(), p.removeOtherSurface(id).
+ *   Their TINs stay out of the history (HISTORY_SPEC view/revive) like surface.tin.
  *   state.crs: null | the project's coordinate system (crs.js; docs/GIS-SPEC.md §1) — an undoable change like any other;
  *   it never moves a coordinate. Older files have none (null); older CivilCraft builds ignore the key.
  *   0.9 SU.1110 + WB.6 (templates.js): state.templates = [template] (the project's own copies, ids tp<n>); a corridor may carry
@@ -99,6 +102,12 @@ import { cleanAcceptedCivil } from './problems-civilcraft.js';   // 0.7.1 → 0.
 import { cleanIdsRecord, idsTextStore } from './ids/record.js';   // 0.7.1 71.25: the IDS the IFC export is checked against (cc-ids, lib/ids synced)
 /** Slice 3: the most other design profiles an alignment keeps (beyond its design profile). */
 export const MAX_MORE_PROFILES = 20;
+/** Slice 3: the most other surfaces (TINs) a project keeps besides its existing ground. */
+export const MAX_MORE_SURFACES = 10;
+/** Slice 3: the other surfaces without their TINs (the TINs stay out of the history and of Live snapshots, as surface.tin does). */
+const surfsLight = (list) => list.map(({ tin, ...x }) => x);
+/** …and with them again: each takes the TIN the state holds for its id now, else the one the project kept for that id (a removed surface brought back by an undo, here or in Live). */
+const surfsWithTins = (list, from, kept) => list.map((x) => ({ ...x, tin: (from || []).find((y) => y.id === x.id)?.tin ?? kept?.get(x.id) ?? null }));
 
 // profFeatures / profWithin (0.5 WL.20): feature lines in the profile view — their crossings, and (within > 0) the lines running
 // alongside within that distance of the centerline; gradeOverlay (0.5 WL.21): grades and elevations along feature lines, screen only
@@ -107,8 +116,8 @@ const MAX_UNDO = 200;
 /** How the state is cut into chunks (lib/history): display settings and the TIN stay out of the history (they are not undo steps); the lists of objects with an id are one chunk per object. */
 export const HISTORY_SPEC = Object.freeze({
   arrays: { alignments: 'id', pads: 'id', features: 'id', parcels: 'id', masses: 'id', zoning: 'id', ponds: 'id', rivers: 'id', swept: 'id', templates: 'id', terrainTemplates: 'id', issues: 'id', parking: 'id', fences: 'id', sectionLines: 'id', progress: 'id' },
-  view: (s) => { const { display, ...rest } = s; const { tin, ...surf } = s.surface; return { ...rest, surface: surf }; },
-  revive: (key, v, state) => (key === 'k:surface' ? { ...v, tin: state.surface ? state.surface.tin : null } : v),
+  view: (s) => { const { display, ...rest } = s; const { tin, ...surf } = s.surface; return { ...rest, surface: surf, ...(s.moreSurfaces ? { moreSurfaces: surfsLight(s.moreSurfaces) } : {}) }; },
+  revive: (key, v, state) => (key === 'k:surface' ? { ...v, tin: state.surface ? state.surface.tin : null } : key === 'k:moreSurfaces' ? surfsWithTins(v, state.moreSurfaces) : v),
 });
 /** The project file as the autosave cuts it (what toJSON leaves out as big goes along as extra chunks). */
 const FILE_SPEC = Object.freeze({ arrays: HISTORY_SPEC.arrays });
@@ -174,7 +183,9 @@ export function recoverText(rec) {
 
 export class Project {
   constructor() {
-    this.h = new ChunkHistory({ spec: HISTORY_SPEC, limit: MAX_UNDO });   // the table of chunks the undo steps are made against
+    this.surfTins = new Map();   // Slice 3: id → TIN of every other surface this project has held (TINs stay out of the history; an undo of a removal takes it from here)
+    const revive = (k, v, s) => (k === 'k:moreSurfaces' ? (this.keepSurfTins(s), surfsWithTins(v, s.moreSurfaces, this.surfTins)) : HISTORY_SPEC.revive(k, v, s));
+    this.h = new ChunkHistory({ spec: { ...HISTORY_SPEC, revive }, limit: MAX_UNDO });   // the table of chunks the undo steps are made against
     this.state = emptyState();
     this.points = [];
     this.pointsFile = '';
@@ -204,8 +215,10 @@ export class Project {
 
   // ---- edits ----
   // display settings are not undo steps: they stay as they are through undo/redo
-  snapshot() { const { tin, ...surf } = this.state.surface; const { display, ...rest } = this.state; return JSON.stringify({ ...rest, surface: surf }); }
-  restore(json) { const s = JSON.parse(json); s.surface.tin = this.state.surface.tin; s.display = this.state.display; this.state = s; }
+  snapshot() { const { tin, ...surf } = this.state.surface; const { display, ...rest } = this.state; return JSON.stringify({ ...rest, surface: surf, ...(rest.moreSurfaces ? { moreSurfaces: surfsLight(rest.moreSurfaces) } : {}) }); }
+  /** Slice 3: remember the TIN of every other surface the state holds now (a change from Studio Live may remove one, and its undo bring it back). */
+  keepSurfTins(state = this.state) { for (const x of state.moreSurfaces || []) if (x.tin) this.surfTins.set(x.id, x.tin); }
+  restore(json) { const s = JSON.parse(json); s.surface.tin = this.state.surface.tin; this.keepSurfTins(); if (s.moreSurfaces) s.moreSurfaces = surfsWithTins(s.moreSurfaces, this.state.moreSurfaces, this.surfTins); s.display = this.state.display; this.state = s; }
   setDisplay(k, v) { if (this.state.display[k] === v) return; this.state.display[k] = v; this.touch('display'); }
   /** An undo step: `rec` the chunks the edit changed (before and after); `json` (live.js) the state's JSON before the step, for the newest step. */
   stepOf(label, rec, extra = {}) {
@@ -387,6 +400,25 @@ export class Project {
     return this.memo('eg:' + a.id, this.surfaceDeps() + JSON.stringify([a.pis, a.start]), () => sampleSurface(sf, al));
   }
   designProfile(a) { return this.memo('fg:' + a.id, JSON.stringify(a.pvis), () => buildProfile(a.pvis || [])); }
+  /** Slice 3: the project's other surfaces, built ({ id, name, desc, surface, breaklines, boundary }; kept and exported, not used for design). */
+  otherSurfaces() {
+    const built = (this._otherTins ||= new WeakMap());
+    return (this.state.moreSurfaces || []).filter((x) => x.tin).map((x) => {
+      let b = built.get(x.tin);
+      if (!b) built.set(x.tin, b = surfaceFromFaces(x.tin));
+      return { id: x.id, name: x.name, desc: x.desc || '', surface: b.surface, breaklines: x.breaklines || [], boundary: x.boundary || null };
+    });
+  }
+  /** Slice 3: drop one of the other surfaces, as an ordinary change (so Studio Live sends it); its TIN stays in surfTins for an undo. */
+  removeOtherSurface(id) {
+    const x = (this.state.moreSurfaces || []).find((y) => y.id === id);
+    if (!x) return false;
+    this.keepSurfTins();
+    return this.change(t('cv.undo.surf.remove', { name: x.name }), (s) => {
+      s.moreSurfaces = s.moreSurfaces.filter((y) => y.id !== id);
+      if (!s.moreSurfaces.length) delete s.moreSurfaces;
+    });
+  }
   designProfileName(a) { return a.profName || t('cv.lx.design', { name: a.name }); }   // Slice 3: the source's name for it, else "<alignment> design"
   /** Slice 3: the alignment's other design profiles, built (kept for export; not graded). */
   otherProfiles(a) { return (a.moreProfiles || []).map((x, i) => ({ name: x.name, profile: this.memo('fg' + i + ':' + a.id, JSON.stringify(x.pvis), () => buildProfile(x.pvis || [])) })); }
@@ -719,7 +751,7 @@ export class Project {
       format: 'civilcraft-project', version: 1, saved: new Date().toISOString(),
       name: this.state.name, units: this.state.units, ...(this.state.units === 'ft' && this.state.foot ? { foot: this.state.foot } : {}), pointsFile: this.pointsFile,   // foot: Slice 2
       points: light ? [] : this.points.map(pointRow),   // 0.5 WL.19: + the block it came from
-      surface: this.state.surface, display: this.state.display,
+      surface: this.state.surface, ...(this.state.moreSurfaces?.length ? { moreSurfaces: this.state.moreSurfaces } : {}), display: this.state.display,   // moreSurfaces: Slice 3
       alignments: this.state.alignments, pads: this.state.pads, network: this.state.network, seq: this.state.seq,
       features: this.state.features || [],   // 0.4 V14
       parcels: this.state.parcels || [],   // 0.4 V21
@@ -843,6 +875,17 @@ export class Project {
       s.surface.tin = { pts: tp, faces: tf };
       if (sf.tin.from === 'grid' || sf.tin.from === 'ifc') s.surface.tin.from = sf.tin.from;   // 'ifc': 0.7.1 71.24 (ifc-civil-read.js)   // GIS: a grid TIN made from an elevation grid (gis-terrain-ui.js)
     }
+    // Slice 3: the other surfaces (older files: none); each needs a TIN with a face
+    const ms = list(obj.moreSurfaces, (x) => {
+      if (!x || typeof x !== 'object' || !x.tin || !Array.isArray(x.tin.pts) || !Array.isArray(x.tin.faces)) return null;
+      const tp = x.tin.pts.slice(0, 5e6).map(xyz);
+      const tf = x.tin.faces.slice(0, 1e7).filter((f) => Array.isArray(f) && f.length === 3 && f.every((i) => Number.isInteger(i) && i >= 0 && i < tp.length));
+      if (!tf.length) return null;
+      const bl = list(x.breaklines, (b) => { const q = list(b?.pts, xyz, 1e6); return q.length >= 2 ? { name: str(b.name, 120), pts: q } : null; }, 1e5), bd = list(x.boundary, xy, 1e6);
+      return { id: /^ts\d+$/.test(String(x.id)) ? String(x.id) : null, name: (typeof x.name === 'string' ? str(x.name, 120).trim() : '') || t('lx.def.surface'), ...(typeof x.desc === 'string' && x.desc.trim() ? { desc: str(x.desc, 200).trim() } : {}), tin: { pts: tp, faces: tf }, ...(bl.length ? { breaklines: bl } : {}), ...(bd.length >= 3 ? { boundary: bd } : {}) };
+    }, MAX_MORE_SURFACES);
+    { const seen = new Set(); for (const x of ms) { if (x.id && seen.has(x.id)) x.id = null; if (x.id) seen.add(x.id); } }   // ids given once the sequence is past every kept id (below)
+    if (ms.length) s.moreSurfaces = ms;
     if (obj.display && typeof obj.display === 'object') for (const k of Object.keys(DISPLAY_DEFAULTS)) { const v = obj.display[k]; if (typeof v === typeof DISPLAY_DEFAULTS[k] && (typeof v !== 'number' || (fin(v) && v > 0)) && (k !== 'surface' || v === 'eg' || v === 'fg')) s.display[k] = v; }
     if (typeof obj.display?.smooth === 'string' && Object.hasOwn(SMOOTH_LEVELS, obj.display.smooth) && SMOOTH_LEVELS[obj.display.smooth]) s.display.smooth = obj.display.smooth;   // 0.9.1 contour smoothing: only written when on, so older files stay byte-identical
     if (obj.display?.cutfill === true) s.display.cutfill = true;   // 0.8 SU.914: the cut and fill map; not a default key, so files that never turned it on stay byte-identical
@@ -938,7 +981,8 @@ export class Project {
     }
     p.gisImages = readGisImages(obj.gisImages, s.gis.maps, notes);   // GIS: map layer pictures (builder C; gis-map-ui.js reads the layers)
     p.points = pts; p.pointsFile = str(obj.pointsFile, 200); p.pointsVersion++;
-    for (const a of [...(s.templates || []), ...(s.terrainTemplates || []), ...s.alignments.flatMap((x) => x.corridors || []), ...s.alignments, ...s.pads, ...(s.network ? [...s.network.structures, ...s.network.pipes, ...(s.network.catchments || []), ...(s.network.types || [])] : []), ...s.gis.layers, ...(s.features || []), ...(s.parcels || []), ...(s.issues || []), ...(s.utilities ? [...s.utilities.runs, ...s.utilities.nodes] : []), ...(s.masses || []), ...(s.swept || []), ...(s.ponds || []), ...Object.values(s.geo || {}).flat(), ...(s.landscape ? [...s.landscape.plants, ...s.landscape.beds, ...s.landscape.hedges, ...s.landscape.grading, ...s.landscape.hardscape, ...(s.landscape.areas || []), ...(s.landscape.levels || []), ...(s.landscape.sections || []), ...(s.landscape.irrigation ? ['heads', 'pipes', 'valves', 'drips'].flatMap((w) => s.landscape.irrigation[w]) : []), ...(s.landscape.freeform || [])] : []), ...(s.water ? [...s.water.nodes, ...s.water.pipes] : []), ...(s.powerlines ? [...s.powerlines.lines, ...s.powerlines.lines.flatMap((l) => l.supports), ...s.powerlines.routes, ...s.powerlines.equipment, ...s.powerlines.obstacles] : [])]) { const n = Number(String(a.id).replace(/^\D+/, '')); if (n >= s.seq) s.seq = n + 1; }
+    for (const a of [...(s.templates || []), ...(s.terrainTemplates || []), ...s.alignments.flatMap((x) => x.corridors || []), ...s.alignments, ...s.pads, ...(s.network ? [...s.network.structures, ...s.network.pipes, ...(s.network.catchments || []), ...(s.network.types || [])] : []), ...s.gis.layers, ...(s.features || []), ...(s.parcels || []), ...(s.issues || []), ...(s.utilities ? [...s.utilities.runs, ...s.utilities.nodes] : []), ...(s.masses || []), ...(s.swept || []), ...(s.ponds || []), ...Object.values(s.geo || {}).flat(), ...(s.landscape ? [...s.landscape.plants, ...s.landscape.beds, ...s.landscape.hedges, ...s.landscape.grading, ...s.landscape.hardscape, ...(s.landscape.areas || []), ...(s.landscape.levels || []), ...(s.landscape.sections || []), ...(s.landscape.irrigation ? ['heads', 'pipes', 'valves', 'drips'].flatMap((w) => s.landscape.irrigation[w]) : []), ...(s.landscape.freeform || [])] : []), ...(s.water ? [...s.water.nodes, ...s.water.pipes] : []), ...(s.powerlines ? [...s.powerlines.lines, ...s.powerlines.lines.flatMap((l) => l.supports), ...s.powerlines.routes, ...s.powerlines.equipment, ...s.powerlines.obstacles] : []), ...(s.moreSurfaces || []).filter((x) => x.id)]) { const n = Number(String(a.id).replace(/^\D+/, '')); if (n >= s.seq) s.seq = n + 1; }
+    for (const x of s.moreSurfaces || []) if (!x.id) x.id = p.nextId('ts');   // Slice 3
     p.h.reset(p.state);   // the state was filled in place: the chunk table starts from it
     return { project: p, notes };
   }

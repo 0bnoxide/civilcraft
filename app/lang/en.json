@@ -654,6 +654,14 @@
     "cv.co.facts": "Corridor facts; {from} and {to} = stations.",
     "cv.co.facts.vol": "Corridor facts; {from} and {to} = stations, {cut} and {fill} = volumes with units.",
     "cv.undo.prof.start": "Undo step name.",
+    "cv.undo.surf.remove": "Undo step name: one of the project's other surfaces (kept from a LandXML file) is removed; {name} = the surface.",
+    "cv.props.moresurf": "Heading in the project properties over the other surfaces a LandXML file brought besides the existing ground.",
+    "cv.props.moresurf.note": "Note under that heading.",
+    "cv.props.moresurf.row": "After a surface's name in that list; {count} = its number of triangles (plural by {n}).",
+    "cv.props.moresurf.remove.of": "Accessible name of the button that removes one of those surfaces; {name} = the surface.",
+    "cv.lx.surfaces.kept": "Note after opening a LandXML file with several surfaces; {name} = the one opened as the existing ground, {n} = how many more were kept.",
+    "cv.lx.surfaces.dropped": "Note after opening a LandXML file with more surfaces than are kept; {n} = how many were not opened.",
+    "cv.lx.surfaces.notin": "Note after opening a LandXML file whose other surfaces have no triangles (no TIN definition); {n} = how many.",
     "cv.undo.prof.use": "Undo step name: another of the alignment's design profiles is made the one it is designed with; {name} = that profile.",
     "cv.prof.more.h": "Heading over an alignment's other design profiles (kept from a file, exported, not used for design).",
     "cv.prof.more.note": "Note under that heading.",
@@ -3886,6 +3894,26 @@
   },
   "cv.prof.noground": "This alignment has no ground under it to start from.",
   "cv.undo.prof.start": "Start design profile",
+  "cv.undo.surf.remove": "Remove surface \"{name}\"",
+  "cv.props.moresurf": "Other surfaces",
+  "cv.props.moresurf.note": "Kept from the file and written back on LandXML export. The design uses the existing ground.",
+  "cv.props.moresurf.row": {
+    "one": "1 triangle",
+    "other": "{count} triangles"
+  },
+  "cv.props.moresurf.remove.of": "Remove surface \"{name}\"",
+  "cv.lx.surfaces.kept": {
+    "one": "Opened \"{name}\" as the existing ground; 1 more surface was kept and will be exported.",
+    "other": "Opened \"{name}\" as the existing ground; {n} more surfaces were kept and will be exported."
+  },
+  "cv.lx.surfaces.dropped": {
+    "one": "1 more surface was not opened (too many).",
+    "other": "{n} more surfaces were not opened (too many)."
+  },
+  "cv.lx.surfaces.notin": {
+    "one": "1 more surface has no triangles in the file and was not opened.",
+    "other": "{n} more surfaces have no triangles in the file and were not opened."
+  },
   "cv.undo.prof.use": "Design with \"{name}\"",
   "cv.prof.more.h": "Other design profiles",
   "cv.prof.more.note": "Kept from the file and written back on export. The design uses the profile above.",

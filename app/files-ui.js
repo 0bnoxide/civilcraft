@@ -6,7 +6,7 @@
  */
 import { t } from './i18n.js';
 import { decodePartsAsync, partsOf, parseJsonParts } from './textin.js';
-import { Project, MAX_MORE_PROFILES } from './project.js';
+import { Project, MAX_MORE_PROFILES, MAX_MORE_SURFACES } from './project.js';
 import { readLandXml, writeLandXml } from './landxml.js';
 import { cleanRail, railDefaults } from './rail.js';
 import { cleanWater } from './water.js';
@@ -75,7 +75,15 @@ export function mountFiles(ctx) {
       p.state.surface.breaklines = s0.breaklines.map((b) => ({ name: b.name.slice(0, 120), pts: b.pts }));
       p.state.surface.boundary = s0.boundary;
       if (s0.faces.length) p.state.surface.tin = { pts: s0.pts, faces: s0.faces };
-      if (d.surfaces.length > 1) notes.push(t('cv.lx.surfaces.more', { name: s0.name, n: d.surfaces.length - 1 }));
+      // Slice 3: the other surfaces with a TIN are kept (and exported); the first is the existing ground
+      const more = d.surfaces.slice(1).filter((x) => x.faces.length), kept = more.slice(0, MAX_MORE_SURFACES);
+      if (kept.length) {
+        p.state.moreSurfaces = kept.map((x) => ({ id: p.nextId('ts'), name: x.name.slice(0, 120), ...(x.desc ? { desc: x.desc.slice(0, 200) } : {}), tin: { pts: x.pts, faces: x.faces },
+          ...(x.breaklines.length ? { breaklines: x.breaklines.map((b) => ({ name: b.name.slice(0, 120), pts: b.pts })) } : {}), ...(x.boundary ? { boundary: x.boundary } : {}) }));
+        notes.push(t('cv.lx.surfaces.kept', { name: s0.name, n: kept.length }));
+      }
+      if (more.length > kept.length) notes.push(t('cv.lx.surfaces.dropped', { n: more.length - kept.length }));
+      if (d.surfaces.length - 1 > more.length) notes.push(t('cv.lx.surfaces.notin', { n: d.surfaces.length - 1 - more.length }));
     }
     for (const a of d.alignments) {
       const prof = a.profiles[0];
@@ -207,9 +215,10 @@ export function mountFiles(ctx) {
 
   function exportLandXml() {
     const s = ctx.project.state, r = ctx.eg();
-    if (!ctx.project.points.length && !r.surface && !s.alignments.length && !(s.features || []).length) { say(t('cv.export.none')); return; }
+    if (!ctx.project.points.length && !r.surface && !s.alignments.length && !(s.features || []).length && !(s.moreSurfaces || []).length) { say(t('cv.export.none')); return; }
     const surfaces = [];
     if (r.surface) surfaces.push({ name: s.surface.name || t('surface.eg'), desc: t('surface.eg'), surface: r.surface, breaklines: ctx.project.egBreaklines(), boundary: s.surface.boundary });
+    for (const x of ctx.project.otherSurfaces()) if (x.surface) surfaces.push({ name: x.name, desc: x.desc, surface: x.surface, breaklines: x.breaklines, boundary: x.boundary });   // Slice 3: the other surfaces a file brought
     const g = ctx.graded();
     if (g.surface) surfaces.push({ name: t('cv.lx.proposed'), desc: t('cv.lx.proposed.desc', { n: s.pads.length }), surface: g.surface });
     const xml = writeLandXml({

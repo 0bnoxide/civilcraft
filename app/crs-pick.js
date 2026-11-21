@@ -169,9 +169,9 @@ export function groundFactor(crs, x, y, z = 0) {
 }
 
 /** Converts every coordinate of a project (state + survey points) with map(x, y) → [x, y]. Call inside one undo step
- *  (Project.editPoints). Refuses a surface read from LandXML (its TIN is kept outside the undo snapshots). */
+ *  (Project.editPoints). Refuses a surface read from LandXML (its TIN is kept outside the undo snapshots), the existing ground's or another one's. */
 export function reprojectProject(state, points, map) {
-  if (state.surface?.tin) return { points, moved: 0, refused: t('crs.reproject.tin') };
+  if (state.surface?.tin || state.moreSurfaces?.some((x) => x.tin)) return { points, moved: 0, refused: t('crs.reproject.tin') };   // Slice 3: the other surfaces too
   let moved = 0;
   const xy = (q) => { const [x, y] = map(q.x, q.y); if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(t('crs.reproject.coord')); q.x = x; q.y = y; moved++; };
   const pts = points.map((p) => { const [x, y] = map(p.x, p.y); if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(t('crs.reproject.point', { n: p.n })); moved++; return { ...p, x, y }; });
