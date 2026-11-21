@@ -223,6 +223,7 @@ export function mountProps(ctx) {
     if (!a.pvis.length) {
       out.push(el('p', { className: 'cv-note' }, t('cv.prof.none')));
       out.push(el('button', { type: 'button', className: 'btn-line btn-sm-cc', 'data-start-profile': '', onclick: () => startProfile(a) }, t('cv.prof.start')));
+      out.push(...moreProfiles(a));
       return out;
     }
     // 0.5 WL.23: vertical curves that do not fit say why, with the longest length that does (one undo step)
@@ -259,7 +260,17 @@ export function mountProps(ctx) {
       out.push(el('ul', { className: 'cv-note cv-plainlist', 'data-profile-facts': '' }, ...lines.map((l) => el('li', {}, l))));
     }
     if (a.pvis.length && (a.pvis[0].sta > al.start + 1e-6 || a.pvis[a.pvis.length - 1].sta < al.end - 1e-6)) out.push(el('p', { className: 'cv-note' }, t('cv.prof.partial', { from: formatStation(al.start, units()), to: formatStation(al.display(al.end), units()) })));
+    out.push(...moreProfiles(a));
     return out;
+  }
+
+  /** Slice 3: the alignment's other design profiles (kept from a file and exported); one button makes one the design profile. */
+  function moreProfiles(a) {
+    if (!a.moreProfiles?.length) return [];
+    return [el('p', { className: 'cv-why-h' }, t('cv.prof.more.h')), el('p', { className: 'cv-note' }, t('cv.prof.more.note')),
+      el('ul', { className: 'cv-plainlist', 'data-more-profiles': '' }, ...a.moreProfiles.map((x, i) => el('li', {}, x.name + ' ',
+        el('button', { type: 'button', className: 'cv-linkbtn', 'data-use-profile': String(i), 'aria-label': t('cv.prof.more.use.of', { name: x.name }),
+          onclick: () => { ctx.project.useOtherProfile(a.id, i); ctx.selPvi = -1; } }, t('cv.prof.more.use')))))];
   }
 
   function corridorProps(a) {
