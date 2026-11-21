@@ -46,7 +46,7 @@ import { PAPERS, paperBy, scalesFor, fitScale, planSheet, toPdf, sheetWindow } f
 import { PlanView, mix, LABEL_FONT } from './view.js';
 import { ProfileView } from './profile-view.js';
 import { snapProfile, slopeOut, setSlope } from './profile-snap.js';   // CV.3 (#1534): snap, slope column and lock in the profile
-import { unitOf, formatStation, parseStation, fixed, pct, volumeText, areaText, dms, bearing, isNum, readLength, grouped, newProjectUnits, TABLE_ID as UNIT_TABLE_ID } from './units.js';
+import { unitOf, formatStation, parseStation, fixed, pct, volumeText, areaText, dms, bearing, isNum, readLength, grouped, newProjectUnits, footMismatch, footWarning, TABLE_ID as UNIT_TABLE_ID } from './units.js';
 import { limitSelect, onUnitsChange } from './unit-prefs.js';   // 0.7 UNITS: Settings › General › Units
 import { buildProfile } from './profile.js';
 import { polyArea, pointInPoly } from './tin.js';
@@ -342,6 +342,8 @@ function init(root) {
     // props: [(sel, box, head) => bool] (Properties for a GIS selection) · overlay: [(ctx, view, sel) => void] ·
     // exportExtra: [(container, host) => void] (sections in GIS › Export) · pointsLatLon / landxmlCrs (gis-vector-ui.js)
     pick: [], props: [], overlay: [], exportExtra: [], pointsLatLon: null, landxmlCrs: null };
+  // Slice 2: a coordinate system whose foot is not the one the project's source named is said when it is set (files keep the project's)
+  gisReg.crsChange.push(() => { const fm = footMismatch(project.state); if (fm) say(footWarning(fm)); });
   const GIS_CMDS = new Set(['crs', 'gis-import', 'gis-export', 'basemap', 'cad-open', 'scan-start', 'gis-analysis', 'gis-table']);   // gis-analysis: 0.9 SU.1080 (gis-analysis-ui.js); cad-open: 0.4 V1 (gis-cad-ui.js); scan-start: Super 0.1 (scan-start-ui.js)
   const GIS_EXT = /\.(shp|shx|dbf|prj|cpg|zip|geojson|gpkg|kml|kmz|tif|tiff|asc|las|laz|jgw|pgw|tfw|wld|pngw|jpgw|png|jpe?g|dwg|dxf|pdf)$/i;   // pdf: Super 0.1, a scanned sheet (scan-start-ui.js)   // 0.4 V1: dwg|dxf → gis-cad-ui.js   // GIS: pictures + world files (map layers)
   let gisReady = null;

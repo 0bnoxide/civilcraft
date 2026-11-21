@@ -19,7 +19,7 @@
  *   p.networkCheck()  analyzeNetwork(state.network, pipeSurface()) — slopes, cover, drops, problems
  *   p.toJSON() / Project.fromJSON(obj) → { project, notes }   the .civilcraft.json project file
  *
- * state = { name, units, surface: { name, groups: { [key]: 'off'|'points'|'breakline' }, breaklines: [{name, pts}],
+ * state = { name, units, foot? ('ft' international | 'ftUS' US survey: the foot a feet project's source named; Slice 2), surface: { name, groups: { [key]: 'off'|'points'|'breakline' }, breaklines: [{name, pts}],
  *           boundary, maxEdge, tin }, display: {…}, alignments: [{ id, name, start, pis:[{x,y,r}], pvis:[{sta,z,L}] }],
  *           pads: [{ id, name, pts:[{x,y}], z, cut, fill }], network: null | pipes.js network,
  *           parcels: [{ id, name, pts:[{x,y,b?}] }] (0.4 V21, parcels.js)
@@ -695,7 +695,7 @@ export class Project {
     const shellOut = { ...(this.shell || {}) }; { const di = typeof window !== 'undefined' && window.ccDocInfo ? window.ccDocInfo.save() : null; if (di) shellOut.docinfo = di; }   // 0.9 DI.1: the drawing details, stamped with this save
     return {
       format: 'civilcraft-project', version: 1, saved: new Date().toISOString(),
-      name: this.state.name, units: this.state.units, pointsFile: this.pointsFile,
+      name: this.state.name, units: this.state.units, ...(this.state.units === 'ft' && this.state.foot ? { foot: this.state.foot } : {}), pointsFile: this.pointsFile,   // foot: Slice 2
       points: light ? [] : this.points.map(pointRow),   // 0.5 WL.19: + the block it came from
       surface: this.state.surface, display: this.state.display,
       alignments: this.state.alignments, pads: this.state.pads, network: this.state.network, seq: this.state.seq,
@@ -787,6 +787,7 @@ export class Project {
     const s = p.state;
     s.name = str(obj.name, 120) || t('project.untitled');
     s.units = obj.units === 'm' ? 'm' : 'ft';
+    if (s.units === 'ft' && (obj.foot === 'ft' || obj.foot === 'ftUS')) s.foot = obj.foot;   // Slice 2: the foot the source file named (units.js footOf)
     s.seq = Number.isInteger(obj.seq) && obj.seq > 0 ? obj.seq : 1;
     const pts = list(obj.points, (r) => {
       if (!Array.isArray(r) || !fin(r[1]) || !fin(r[2])) return null;

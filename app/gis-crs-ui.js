@@ -533,7 +533,7 @@ export function install(host) {
         const fOld = frame(current), fNew = frame(next).from({ ...current, local: null });
         const map = (x, y) => { const g = fOld.toGrid(x, y); return fNew(g[0], g[1]); };
         let res = null, err = null;
-        try { p.editPoints(t('crs.d.undo.convert', { crs: next.name }), (pts, st) => { res = reprojectProject(st, pts, map); if (res.refused) return null; st.crs = next; return res.points; }); } catch (e) { err = e.message; }
+        try { p.editPoints(t('crs.d.undo.convert', { crs: next.name }), (pts, st) => { res = reprojectProject(st, pts, map); if (res.refused) return null; st.crs = next; if (st.units === 'ft' && (next.unit === 'ft' || next.unit === 'ftUS')) st.foot = next.unit; return res.points; });   // Slice 2: converted numbers are in the new system's foot } catch (e) { err = e.message; }
         if (err || res?.refused) { problemBox.textContent = err || res.refused; problemBox.hidden = false; return; }
         host.say(t('crs.d.converted', { count: res.moved.toLocaleString('en-US'), crs: next.name }));
       } else {

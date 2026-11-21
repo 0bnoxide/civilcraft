@@ -14,7 +14,7 @@
  * Everything is in project units and absolute project coordinates (the writer moves it to the file's origin). Areas and volumes
  * stay in square / cubic project units here; the writer converts them to SI for quantities.
  *
- * model = { name, units, crs, lat, lon,
+ * model = { name, units, foot (Slice 2: the project's stated foot, or null), crs, lat, lon,
  *   alignments: [{ id, name, start, end, length, h, v | null, pis, pvis, poly: [{x, y, z | null, sta}], superEvents: [{ sta, L, R }], design }]
  *     (design: 0.7.1 71.24 { speed, unit 'km/h' | 'mph', cls } | null)
  *     (superEvents: the corridor's superelevation transition stations with the lanes' fall-away slopes, corridor.js sign)
@@ -344,7 +344,7 @@ export function civilIfcModel(project, { species = null, lat = null, lon = null 
   const egR = project.eg(), eg = egR.surface || null, g = project.graded(), fg = g.surface || null;
   const vol = eg && fg ? project.volumes() : null;
   const volOf = (id) => { const v = vol?.items?.find((x) => x.id === id); return v ? { cut: v.cut, fill: v.fill } : null; };
-  const model = { name: s.name, units, crs: s.crs || null, lat, lon, alignments: [], corridors: [], surfaces: [], pads: [], network: null, parcels: [], landscape: [], masses: [], notes };
+  const model = { name: s.name, units, foot: units === 'ft' ? s.foot || null : null, crs: s.crs || null, lat, lon, alignments: [], corridors: [], surfaces: [], pads: [], network: null, parcels: [], landscape: [], masses: [], notes };
 
   const byAl = new Map();
   for (const a of s.alignments) { const x = alignmentOf(project, a); if (x) { model.alignments.push(x); byAl.set(a.id, x); } }

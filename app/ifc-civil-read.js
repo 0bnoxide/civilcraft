@@ -3,8 +3,9 @@
  * ifc-civil-read.js — 0.7.1 71.24: an IFC file into CivilCraft through cc-ifc (./ifc/, the shared reader BimCraft and DetailCraft use).
  * DOM-free; the Node test drives it exactly as the page does.
  *
- *   readCivilIfc(bytes, { units, maxRefTriangles }) → {
+ *   readCivilIfc(bytes, { units, foot, maxRefTriangles }) → {
  *     schema, fileUnit (metres per file unit), units ('m' | 'ft': the project's, or the file's when none is given),
+ *     foot ('ft' | 'ftUS' | null: Slice 2, the project's foot as given, or the file's when no units are given),
  *     georef: { crs, eastings, northings, height, rotation, scale } | null,
  *     alignments: [{ name, start, pis: [{x, y, r, ls1?, ls2?}], pvis: [{sta, z, L}], from, notes, design, gid (its GlobalId) }],
  *     surfaces: [{ id, name, kind 'eg' | 'design' | 'terrain', pts: [{x, y, z}], faces: [[a, b, c]] }],
@@ -34,6 +35,7 @@ import { IfcFile } from './ifc/model.js';
 import { GeoCtx } from './ifc/geo-ctx.js';
 import { Geometry } from './ifc/geometry.js';
 import { t } from './i18n.js';
+import { FOOT_M } from './units.js';
 import { transitionShape, transitionAt, cubicParamFor, buildAlignment, cleanEquations } from './alignment.js';   // 0.7.1 71.26 / B: rail transitions
 import { railDefaults, cleanRail } from './rail.js';
 
@@ -161,10 +163,15 @@ function nests(f, g) {
   return out;
 }
 
-export function readCivilIfc(bytes, { units = null, maxRefTriangles = 2_000_000 } = {}) {
+export function readCivilIfc(bytes, { units = null, foot = null, maxRefTriangles = 2_000_000 } = {}) {
   const f = IfcFile.open(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
   const g = new GeoCtx(f), notes = [];
-  const fileUnit = g.lengthUnit, pu = units || (Math.abs(fileUnit - 1) < 1e-9 ? 'm' : 'ft'), k = fileUnit / M_PER[pu];   // file units → project units
+  const fileUnit = g.lengthUnit, pu = units || (Math.abs(fileUnit - 1) < 1e-9 ? 'm' : 'ft');
+  // Slice 2: which foot. A feet project's own (foot: units.js footOf); a fresh one takes the file's, international or US survey
+  const fileFoot = Math.abs(fileUnit - FOOT_M.ft) < 1e-12 ? 'ft' : Math.abs(fileUnit - FOOT_M.ftUS) < 1e-12 ? 'ftUS' : null;
+  const pf = pu === 'm' ? null : units ? (foot === 'ft' ? 'ft' : 'ftUS') : fileFoot || 'ftUS';
+  const k = fileUnit / (pf ? FOOT_M[pf] : M_PER[pu]);   // file units → project units
+  if (pf && fileFoot && fileFoot !== pf) notes.push(t('ifc.in.foot', { file: t('units.foot.' + fileFoot), project: t('units.foot.' + pf) }));
   const P = props(f, g), N = nests(f, g), raw = String(f.fileSchema || '').toUpperCase();
   // the file's local coordinates → project coordinates
   const geo = g.georef();
@@ -178,7 +185,7 @@ export function readCivilIfc(bytes, { units = null, maxRefTriangles = 2_000_000 
     const ox = fin(cc?.OriginEasting) ? cc.OriginEasting : 0, oy = fin(cc?.OriginNorthing) ? cc.OriginNorthing : 0;
     toProject = (x, y, z = 0) => [(x + ox) * k, (y + oy) * k, z * k];
   }
-  const out = { schema: raw.startsWith('IFC4X1') ? 'IFC4X1' : f.schemaName, fileUnit, units: pu, georef: geo ? { crs: geo.crs?.name || '', eastings: geo.eastings, northings: geo.northings, height: geo.height, rotation: rot, scale: sc } : null, alignments: [], surfaces: [], refs: [], counts: { alignments: 0, surfaces: 0, refs: 0, triangles: 0 }, notes };
+  const out = { schema: raw.startsWith('IFC4X1') ? 'IFC4X1' : f.schemaName, fileUnit, units: pu, foot: pf, georef: geo ? { crs: geo.crs?.name || '', eastings: geo.eastings, northings: geo.northings, height: geo.height, rotation: rot, scale: sc } : null, alignments: [], surfaces: [], refs: [], counts: { alignments: 0, surfaces: 0, refs: 0, triangles: 0 }, notes };
   const LEN = sc * k;   // a length in the file → project units
   const used = new Set();   // products read as alignments or surfaces (not repeated as reference elements)
 

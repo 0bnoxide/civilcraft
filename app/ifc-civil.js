@@ -46,6 +46,7 @@
 import { schemaFor } from './ifc/schema.js';
 import { guid } from './landscape/ifc-landscape.js';
 import { fileUnit, FT_US_M } from './ifc-massing.js';
+import { footOf } from './units.js';
 
 export const SCHEMAS = ['IFC4X3_ADD2', 'IFC4', 'IFC2X3'];
 export const SCHEMA_INFO = {
@@ -148,7 +149,7 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
   const w = new W(schema), X4 = w.x4, X2 = w.x2, units = model.units, crs = model.crs;
   const o = origin || fileOrigin(model), lx = (x) => x - o.x, ly = (y) => y - o.y, lz = (z) => z - o.z;
   const id = (s) => S(guid(seed + '|' + s));
-  const unit = fileUnit(units, crs), um = unit === 'm' ? 1 : unit === 'ft' ? 0.3048 : FT_US_M, m2 = (a) => a * um * um, m3 = (v) => v * um * um * um;
+  const unit = fileUnit(units, crs, model.foot), um = unit === 'm' ? 1 : unit === 'ft' ? 0.3048 : FT_US_M, m2 = (a) => a * um * um, m3 = (v) => v * um * um * um;
   const meshArea = (m) => { let s = 0; for (let i = 0; i < m.idx.length; i += 3) s += triArea(m.pos, m.idx[i], m.idx[i + 1], m.idx[i + 2]); return m2(s); };
   const counts = { alignments: 0, segments: 0, referents: 0, roads: 0, roadParts: 0, courses: 0, elements: 0, earthworks: 0, surfaces: 0, triangles: 0, pads: 0, walls: 0, pipes: 0, structures: 0, parcels: 0, landscape: 0, masses: 0, psets: 0, quantities: 0 };
 
@@ -264,7 +265,7 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
     }
   }
   // i18n-ignore: IFC file data (property values in English, like every IFC we write)
-  pset([site], 'CadCraft_Site', [['OriginEasting', o.x, 'len'], ['OriginNorthing', o.y, 'len'], ['ProjectUnits', units === 'm' ? 'metre' : 'US survey foot', 'label'], ['Source', 'CivilCraft', 'label']], 'site');
+  pset([site], 'CadCraft_Site', [['OriginEasting', o.x, 'len'], ['OriginNorthing', o.y, 'len'], ['ProjectUnits', units === 'm' ? 'metre' : footOf(units, crs, model.foot) === 'ft' ? 'foot' : 'US survey foot', 'label'], ['Source', 'CivilCraft', 'label']], 'site');
   const siteKids = [], contain = new Map();   // container → [elements]
   const put = (container, el) => { if (!contain.has(container)) contain.set(container, []); contain.get(container).push(el); };
 
@@ -329,7 +330,7 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
     const tag = 'al|' + a.id;
     counts.alignments++;
     // i18n-ignore: IFC file data (pset values)
-    const props = [['StartStation', a.start, 'len'], ['EndStation', a.end, 'len'], ['Length', a.length, 'len'], ['ProjectUnits', units === 'm' ? 'metre' : 'US survey foot', 'label'],
+    const props = [['StartStation', a.start, 'len'], ['EndStation', a.end, 'len'], ['Length', a.length, 'len'], ['ProjectUnits', units === 'm' ? 'metre' : footOf(units, crs, model.foot) === 'ft' ? 'foot' : 'US survey foot', 'label'],
       ['PIs', a.pis.map((p) => [...[p.x, p.y, p.r || 0, p.ls1 || p.ls || 0, p.ls2 || p.ls || 0].map((v) => +(+v).toFixed(6)), ...(p.tr || p.cant ? [p.tr || '', +(+(p.cant || 0)).toFixed(3)] : [])].join(',')).join(';'), 'text'],   // + transition kind and cant (mm): 71.26 / B
       ['PVIs', a.pvis.map((p) => [p.sta, p.z, p.L || 0].map((v) => +(+v).toFixed(6)).join(',')).join(';'), 'text'],
       ['CurveCount', a.h.filter((s) => s.type !== 'LINE').length, 'int'], ...designProps(a.design), ['RailSettings', a.rail ? JSON.stringify(a.rail) : null, 'text']];

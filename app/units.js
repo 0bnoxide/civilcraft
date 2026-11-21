@@ -36,6 +36,33 @@ export function newProjectUnits() {
   return s ? (tableUnit(s).sys === 'metric' ? 'm' : 'ft') : 'ft';
 }
 
+/**
+ * Slice 2: which foot a feet project's numbers are in — 'ft' (international, 0.3048 m) or 'ftUS' (US survey, 1200/3937 m).
+ * The foot the project states (state.foot: the one its source file named) wins; else its coordinate system's; else the US survey
+ * foot CivilCraft has always meant. A metre project → 'm'. The numbers are never converted by this: it decides what files say.
+ */
+export function footOf(units, crs = null, foot = null) {
+  if (units === 'm') return 'm';
+  if (foot === 'ft' || foot === 'ftUS') return foot;
+  return crs?.unit === 'ft' ? 'ft' : 'ftUS';
+}
+/** The project's foot and its coordinate system's when they differ (the source named one foot, the system uses the other), else null. */
+export function footMismatch(state) {
+  if (!state || state.units === 'm' || (state.foot !== 'ft' && state.foot !== 'ftUS')) return null;
+  const c = state.crs?.unit;
+  return (c === 'ft' || c === 'ftUS') && c !== state.foot ? { foot: state.foot, crs: c, name: state.crs.name || '' } : null;
+}
+/** footMismatch's result, said. */
+export function footWarning(m) { return t('cv.foot.mismatch', { foot: t('units.foot.' + m.foot), crs: m.name, crsFoot: t('units.foot.' + m.crs) }); }
+/** Metres per foot, and each foot's LandXML linearUnit name. */
+export const FOOT_M = Object.freeze({ ft: 0.3048, ftUS: 1200 / 3937 });
+export const LANDXML_FOOT = Object.freeze({ ft: 'foot', ftUS: 'USSurveyFoot' });
+/** The foot of a LandXML linearUnit name ('ft' | 'ftUS'), or null when it is not a foot. */
+export function footOfLinearUnit(name) {
+  const m = METRES_PER[name];
+  return m === undefined ? null : Math.abs(m - FOOT_M.ft) < 1e-12 ? 'ft' : Math.abs(m - FOOT_M.ftUS) < 1e-12 ? 'ftUS' : null;
+}
+
 /** Metres per unit for linear units found in files (LandXML linearUnit names). */
 export const METRES_PER = { USSurveyFoot: 1200 / 3937, foot: 0.3048, ft: 0.3048, meter: 1, m: 1, metre: 1, millimeter: 0.001, centimeter: 0.01, kilometer: 1000 };
 
