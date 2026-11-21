@@ -31,7 +31,7 @@ import { t } from './i18n.js';
 import { listZip, unzipEntry } from './zipfile.js';
 import { mapXY, mapZ, bounds } from './gis-geom.js';
 import { addLayers } from './gis-layers.js';
-import { byCode, crsFromPrj, crsFromEntry, frame, transformer, search, METRES_PER } from './crs.js';
+import { byCode, crsFromPrj, crsFromEntry, frame, transformer, search, METRES_PER, gridStatus } from './crs.js';
 
 export class GisReadError extends Error {}
 const MAX_FILE = 200 * 1024 * 1024;
@@ -181,7 +181,15 @@ export function buildLayers(sources, { project = null, units = 'ft', overrides =
     else {
       if (!project) { notes.push(t('gread.noproject', { file: s.file, crs: srcName(src) })); return; }
       geo = src.kind === 'wgs84' || src.geographic;
-      try { const f = frame(project); fwd = f.from(srcDef(src)); } catch (e) { notes.push(t('gread.noconvert', { file: s.file, why: e.message })); return; }
+      try {
+        const f = frame(project);
+        if (!geo && src.crs.proj4 === project.proj4) fwd = f.fromGrid;
+        else {
+          const problem = gridStatus(project)?.problem;
+          if (problem) throw new Error(problem);
+          fwd = f.from(srcDef(src));
+        }
+      } catch (e) { notes.push(t('gread.noconvert', { file: s.file, why: e.message })); return; }
       const srcM = geo ? 1 : UNIT_M[src.crs.unit] || METRES_PER[src.crs.unit] || 1;
       zk = srcM / projM;
     }

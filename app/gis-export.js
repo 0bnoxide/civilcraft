@@ -31,7 +31,7 @@ import { t } from './i18n.js';
 import { zip } from './zipfile.js';
 import { mapXY, ringArea, pointInRing } from './gis-geom.js';
 import { DIA_UNIT } from './pipes.js';
-import { frame, transformer, prjFor, METRES_PER as CRS_METRES } from './crs.js';
+import { frame, transformer, prjFor, requireCrsGrid, METRES_PER as CRS_METRES } from './crs.js';
 
 // [key, label key, geometry, file stem] (labels looked up when used: language files load after this module)
 const KINDS = [
@@ -206,6 +206,15 @@ export function srsFor(crs, prj) {
   return crs.code ? { id: crs.code, org: 'EPSG', code: crs.code, name: crs.name, definition: prj || 'undefined' } : { id: 100000, org: 'NONE', code: 100000, name: crs.name, definition: prj || 'undefined' };
 }
 
+export const geographicFormat = (format) => ['geojson', 'kml', 'kmz'].includes(format);
+
+/** A geographic export must use the named correction. Projected exports need only the local grid mapping. */
+export function exportLonLat(crs, format) {
+  if (!crs || !geographicFormat(format)) return null;
+  requireCrsGrid(crs);
+  return transformer(crs, null);
+}
+
 /** GIS › Export in one call (the page and the test both use it): the chosen kinds in grid coordinates, written as
  *  `format`; GeoJSON needs a project system (refused with the reason otherwise); without one, shapefiles and
  *  GeoPackages carry the project's own numbers and no system (a note says so). */
@@ -215,8 +224,8 @@ export async function exportProject(project, keys, format, { stem = 'site' } = {
   if ((format === 'kml' || format === 'kmz') && !crs) throw new Error(t('kml.need.crs'));   // 0.4 V6
   const f = crs ? frame(crs) : null;
   const groups = exportGroups(project, keys, f ? { toGrid: f.toGrid } : {});
-  const prj = crs ? await prjFor(crs) : null;
-  const toLonLat = crs ? transformer(crs, null) : null;
+  const toLonLat = exportLonLat(crs, format);
+  const prj = crs && !geographicFormat(format) ? await prjFor(crs) : null;
   const k = crs ? CRS_METRES[crs.unit] || 1 : 1;
   const r = await writeExport(groups, { format, prj, toLonLat, zToMetres: (z) => z * k, stem, srs: srsFor(crs, prj) });
   if (!crs) r.notes.unshift(t('gexp.nocrs'));

@@ -593,7 +593,14 @@ function init(root) {
     try { window.ccAddonsFile?.offer({ addons: project.usesAddons || {} }, el); el.hidden = !el.childNodes.length; } catch (e) { console.warn('add-on offer failed', e); }
   }
   var shellM = null;   // eslint-disable-line no-var
+  let gridProject = null;
   function rebind() {
+    if (project !== gridProject) {
+      gridProject?.useCrsGrids(null);
+      const opened = project;
+      gridProject = opened;
+      opened.useCrsGrids(() => project === opened);
+    }
     bindAutosave();
     undoHook.attach(); offerAddons();
     project.on(refresh); window.dispatchEvent(new CustomEvent('cc-addon-model-changed')); shellM?.opened(); picked.clear(); pasteJob = null; if (tool === 'paste') tool = 'select';

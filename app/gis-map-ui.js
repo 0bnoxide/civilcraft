@@ -18,7 +18,7 @@
 
 import { el } from './ui-util.js';
 import * as B from './basemap.js';
-import { byCode, crsFromEntry, crsFromPrj, frame, crsProblem, gridInfo } from './crs.js';
+import { byCode, crsFromEntry, crsFromPrj, frame, crsProblem, gridStatus } from './crs.js';
 import { t } from "./i18n.js";
 
 const MAX_ACTIVE = 6, MAX_CACHE = 200, MAX_TILES = 64;
@@ -124,9 +124,14 @@ export function install(host) {
 
   // ---------------------------------------------------------------- systems
   const pcrs = () => { const c = project().state.crs; return c && !crsProblem(c, project().state.units) ? c : null; };
-  let fcache = { key: '~', f: null, conv: new Map(), gen: 0 };
-  // 0.4 V11: the key changes once the project's grid shift file loads
-  const pframe = () => { const c = pcrs(), k = c ? JSON.stringify(c) + (c.grid && gridInfo(c.grid) ? '+grid' : '') : ''; if (k !== fcache.key) { fcache = { key: k, f: c ? frame(c) : null, conv: new Map(), gen: fcache.gen + 1 }; } return fcache.f; };
+  let fcache = { key: '~', crs: null, grid: null, f: null, conv: new Map(), gen: 0 };
+  const pframe = () => {
+    const c = pcrs(), key = c ? JSON.stringify(c) : '', grid = c ? gridStatus(c)?.info ?? null : null;
+    if (key !== fcache.key || c !== fcache.crs || grid !== fcache.grid) {
+      fcache = { key, crs: c, grid, f: c ? frame(c) : null, conv: new Map(), gen: fcache.gen + 1 };
+    }
+    return fcache.f;
+  };
   /** source system (crs-shaped) of a layer, or null = the project's own coordinates. */
   function layerCrs(m) {
     if (m.crsProj4) return { code: m.crsCode, name: m.crsName, proj4: m.crsProj4, unit: m.crsUnit };
@@ -142,6 +147,7 @@ export function install(host) {
     let c = fcache.conv.get(k);
     if (!c) {
       const same = src.proj4 === f.crs.proj4;
+      if (!same && gridStatus(f.crs)?.problem) return null;
       c = same ? { toSrc: (x, y) => f.toGrid(x, y), fromSrc: (x, y) => f.fromGrid(x, y), same: true } : { toSrc: f.to(src), fromSrc: f.from(src), same: false };
       fcache.conv.set(k, c);
     }
