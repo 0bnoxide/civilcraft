@@ -8,7 +8,8 @@
  *     points      [{ n, x, y, z, d }]                          → CgPoints/CgPoint (name, desc, code)
  *     surfaces    [{ name, desc, surface, breaklines, boundary }] → Surface: SourceData (Breaklines, Boundaries)
  *                                                                  + Definition surfType="TIN" (Pnts/P, Faces/F)
- *     alignments  [{ name, alignment, eg: {name, pts:[{sta,z}]}, profile: {name, profile} }]
+ *     alignments  [{ name, alignment, eg: {name, pts:[{sta,z}]}, profile: {name, profile}, more?: [{name, profile}] }]
+ *                   (more: Slice 3, the alignment's other design profiles, each its own ProfAlign after the first)
  *                   → Alignment/CoordGeom (Line, Curve crvType="arc", Spiral clothoid) + Profile (ProfSurf, ProfAlign PVI/ParaCurve)
  *     networks    [{ name, type, structures, pipes }] (pipes.js shape; structures may carry rimShown/sump to write) → PipeNetworks
  *     features    [feature line (featureline.js)] (0.6 WL.24) → PlanFeatures/PlanFeature/CoordGeom: Line and Curve
@@ -136,8 +137,8 @@ export function writeLandXml({ name = 'CivilCraft project', units = 'ft', foot =
       // Slice 1: station equations (internal = the station along the alignment where it applies; back as the stationing before reaches it)
       (al.eqs || []).forEach((q, i) => L.push(`      <StaEquation staInternal="${num(q.internal)}" staBack="${num(al.eqBack(i))}" staAhead="${num(q.ahead)}" staIncrement="increasing"${q.desc ? ` desc="${esc(q.desc)}"` : ''}/>`));
       if (a.cant?.plan) { const cx = cantXml({ name: a.name, plan: a.cant.plan, rail: a.cant.rail, units, speed: a.cant.speed, alignment: al }); if (cx) L.push(cx); }   // CV.1 2026-11-12: a railway's cant (the schema's place: after CoordGeom)
-      const eg = a.eg, fg = a.profile;
-      if ((eg && eg.pts?.length) || fg?.profile?.pvis?.length) {
+      const eg = a.eg, fgs = [a.profile, ...(a.more || [])].filter((x) => x?.profile?.pvis?.length);   // Slice 3: every design profile
+      if ((eg && eg.pts?.length) || fgs.length) {
         L.push(`      <Profile name="${esc(a.name)}">`);
         if (eg && eg.pts?.length) {
           // runs of stations with elevations (gaps where the alignment leaves the surface start a new list)
@@ -147,7 +148,7 @@ export function writeLandXml({ name = 'CivilCraft project', units = 'ft', foot =
           if (cur.length) runs.push(cur);
           for (const r of runs) if (r.length >= 2) L.push(`        <ProfSurf name="${esc(eg.name)}"><PntList2D>${r.map((p) => num(p.sta, 4) + ' ' + num(p.z, 4)).join(' ')}</PntList2D></ProfSurf>`);
         }
-        if (fg?.profile?.pvis?.length) {
+        for (const fg of fgs) {
           L.push(`        <ProfAlign name="${esc(fg.name)}">`);
           fg.profile.pvis.forEach((v, i) => {
             const curve = i > 0 && i < fg.profile.pvis.length - 1 && v.L > 0;

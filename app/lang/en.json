@@ -654,6 +654,13 @@
     "cv.co.facts": "Corridor facts; {from} and {to} = stations.",
     "cv.co.facts.vol": "Corridor facts; {from} and {to} = stations, {cut} and {fill} = volumes with units.",
     "cv.undo.prof.start": "Undo step name.",
+    "cv.undo.prof.use": "Undo step name: another of the alignment's design profiles is made the one it is designed with; {name} = that profile.",
+    "cv.prof.more.h": "Heading over an alignment's other design profiles (kept from a file, exported, not used for design).",
+    "cv.prof.more.note": "Note under that heading.",
+    "cv.prof.more.use": "Button beside one of those profiles that makes it the design profile.",
+    "cv.prof.more.use.of": "Accessible name of that button; {name} = the profile.",
+    "cv.lx.profiles.kept": "Note after opening a LandXML file whose alignment has several design profiles; {name} = alignment, {first} = the profile used for design, {n} = how many more were kept.",
+    "cv.lx.profiles.dropped": "Note after opening a LandXML file whose alignment has more design profiles than are kept; {name} = alignment, {n} = how many were not opened.",
     "cv.undo.pad.rename": "Undo step name.",
     "cv.undo.pad.z": "Undo step name.",
     "cv.pad.area": "Pad property: its plan area.",
@@ -3879,6 +3886,19 @@
   },
   "cv.prof.noground": "This alignment has no ground under it to start from.",
   "cv.undo.prof.start": "Start design profile",
+  "cv.undo.prof.use": "Design with \"{name}\"",
+  "cv.prof.more.h": "Other design profiles",
+  "cv.prof.more.note": "Kept from the file and written back on export. The design uses the profile above.",
+  "cv.prof.more.use": "Design with this one",
+  "cv.prof.more.use.of": "Design with \"{name}\"",
+  "cv.lx.profiles.kept": {
+    "one": "Alignment \"{name}\": designing with \"{first}\"; 1 more design profile was kept and will be exported.",
+    "other": "Alignment \"{name}\": designing with \"{first}\"; {n} more design profiles were kept and will be exported."
+  },
+  "cv.lx.profiles.dropped": {
+    "one": "Alignment \"{name}\": 1 more design profile was not opened (too many).",
+    "other": "Alignment \"{name}\": {n} more design profiles were not opened (too many)."
+  },
   "cv.prof.started": "Design profile started at the ground at both ends. Turn on Add PVIs and click to add grade breaks; give them a curve length in the table.",
   "cv.undo.pad.rename": "Rename pad",
   "cv.undo.pad.z": "Pad elevation",

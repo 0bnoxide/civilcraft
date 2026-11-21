@@ -29,6 +29,8 @@
  *   p.railPlan(a) (cantPlan), p.railWarnings(); its corridor is then built as a track (corridor.js asm.rail via railAsm).
  *   alignments may carry eqs: [{ internal, ahead, back?, desc? }] (station equations; every stored station stays internal: alignment.js)
  *   and profName: the design profile's name from its source (LandXML ProfAlign); export writes it back (Slice 3; absent: "<alignment> design")
+ *   and moreProfiles: [{ name, pvis }] — its other design profiles (Slice 3): kept, saved and exported, not used for design
+ *   until one is chosen (p.useOtherProfile(alignmentId, i) swaps it with pvis in one undo step); p.otherProfiles(a) [{name, profile}]
  *   alignments also carry corridor: null | { on, lane, laneSlope, shoulder, shoulderSlope, cut, fill, step, super?, targets? (0.6
  *   WL.25: corridor.js cleanTargets; corridorOrder() grades a corridor after the ones it targets) } (corridor.js;
  *   super: superelev.js, 0.4 V18)
@@ -95,6 +97,8 @@ import { t } from './i18n.js';
 import { ChunkHistory, objectJournal, recoverState, recoverExtras, join } from './history/index.js';   // 0.10 PERF.21 / PERF.24: undo by change records, autosave that writes what changed
 import { cleanAcceptedCivil } from './problems-civilcraft.js';   // 0.7.1 → 0.8: problems accepted as intended (docs/0.8-PROBLEMS-SPEC.md)
 import { cleanIdsRecord, idsTextStore } from './ids/record.js';   // 0.7.1 71.25: the IDS the IFC export is checked against (cc-ids, lib/ids synced)
+/** Slice 3: the most other design profiles an alignment keeps (beyond its design profile). */
+export const MAX_MORE_PROFILES = 20;
 
 // profFeatures / profWithin (0.5 WL.20): feature lines in the profile view — their crossings, and (within > 0) the lines running
 // alongside within that distance of the centerline; gradeOverlay (0.5 WL.21): grades and elevations along feature lines, screen only
@@ -384,6 +388,22 @@ export class Project {
   }
   designProfile(a) { return this.memo('fg:' + a.id, JSON.stringify(a.pvis), () => buildProfile(a.pvis || [])); }
   designProfileName(a) { return a.profName || t('cv.lx.design', { name: a.name }); }   // Slice 3: the source's name for it, else "<alignment> design"
+  /** Slice 3: the alignment's other design profiles, built (kept for export; not graded). */
+  otherProfiles(a) { return (a.moreProfiles || []).map((x, i) => ({ name: x.name, profile: this.memo('fg' + i + ':' + a.id, JSON.stringify(x.pvis), () => buildProfile(x.pvis || [])) })); }
+  /** Slice 3: make the alignment's i-th other design profile the one it is designed with; the current one takes its place
+   *  in the list (dropped when it has fewer than 2 PVIs). One undo step; false when there is no such profile. */
+  useOtherProfile(id, i) {
+    const a0 = this.state.alignments.find((x) => x.id === id), x0 = a0?.moreProfiles?.[i];
+    if (!x0) return false;
+    this.change(t('cv.undo.prof.use', { name: x0.name }), (s) => {
+      const a = s.alignments.find((x) => x.id === id), x = a.moreProfiles[i];
+      const cur = { name: this.designProfileName(a), pvis: a.pvis };
+      if (cur.pvis.length >= 2) a.moreProfiles[i] = cur; else a.moreProfiles.splice(i, 1);
+      if (!a.moreProfiles.length) delete a.moreProfiles;
+      a.pvis = x.pvis; a.profName = x.name;
+    });
+    return true;
+  }
 
   padsDeps(tag = 'fg') { return tag === 'eg' ? '' : this.gradeDeps(); }
   /** What the graded surface depends on besides the existing ground: pads, and alignments with a corridor on. */
@@ -841,7 +861,10 @@ export class Project {
         return { ...xy(q), r, ...(ls1 ? { ls1 } : {}), ...(ls2 ? { ls2 } : {}), ...(tr ? { tr } : {}), ...(cant ? { cant } : {}) };
       }, 1e4);
       if (pis.length < 2) return null;
-      const pvis = list(a.pvis, (v) => (v && fin(v.sta) && fin(v.z) ? { sta: v.sta, z: v.z, L: fin(v.L) && v.L > 0 ? v.L : 0, ...(v.locked === true ? { locked: true } : {}) } : null), 1e4);   // locked: CV.3 (#1534)
+      const pviOf = (v) => (v && fin(v.sta) && fin(v.z) ? { sta: v.sta, z: v.z, L: fin(v.L) && v.L > 0 ? v.L : 0, ...(v.locked === true ? { locked: true } : {}) } : null);   // locked: CV.3 (#1534)
+      const pvis = list(a.pvis, pviOf, 1e4);
+      // Slice 3: its other design profiles (older files: none); a profile needs 2 PVIs
+      const moreProfiles = list(a.moreProfiles, (x) => { if (!x || typeof x !== 'object') return null; const q = list(x.pvis, pviOf, 1e4); return q.length >= 2 ? { name: (typeof x.name === 'string' ? str(x.name, 120).trim() : '') || t('lx.def.profile'), pvis: q } : null; }, MAX_MORE_PROFILES);
       const corridor = a.corridor && typeof a.corridor === 'object' ? cleanCorridor(a.corridor, s.units, tplIds) : null;
       // 0.9 SU.1110: more corridors on this alignment (station ranges), each a corridor of its own
       const more = list(a.corridors, (c) => { if (!c || typeof c !== 'object') return null; const x = cleanCorridor(c, s.units, tplIds); return { id: /^cr\d+$/.test(String(c.id)) ? c.id : p.nextId('cr'), name: str(c.name, 80) || t('tpl.corr.default'), ...x }; }, 20);
@@ -850,7 +873,7 @@ export class Project {
       const rail = cleanRail(a.rail, s.units);   // 0.7.1 71.26: a track (older files: none)
       const eqs = cleanEquations(a.eqs);   // Slice 1: station equations (older files: none)
       const profName = typeof a.profName === 'string' ? str(a.profName, 120).trim() : '';   // Slice 3: the design profile's source name (older files: none)
-      return { id: id(a.id, 'a'), name: str(a.name, 120) || t('scene.al.default'), start: fin(a.start) ? a.start : 0, pis, pvis, corridor, sampling: cleanSampling(a.sampling, s.units), ...(more.length ? { corridors: more } : {}), ...(minR ? { minR } : {}), ...(design ? { design } : {}), ...(rail ? { rail } : {}), ...(eqs.length ? { eqs } : {}), ...(profName ? { profName } : {}) };
+      return { id: id(a.id, 'a'), name: str(a.name, 120) || t('scene.al.default'), start: fin(a.start) ? a.start : 0, pis, pvis, corridor, sampling: cleanSampling(a.sampling, s.units), ...(more.length ? { corridors: more } : {}), ...(minR ? { minR } : {}), ...(design ? { design } : {}), ...(rail ? { rail } : {}), ...(eqs.length ? { eqs } : {}), ...(profName ? { profName } : {}), ...(moreProfiles.length ? { moreProfiles } : {}) };
     }, 1000);
     s.pads = list(obj.pads, (d) => {
       const q = list(d?.pts, xy, 1e4);
