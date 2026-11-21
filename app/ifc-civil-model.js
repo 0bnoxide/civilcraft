@@ -22,7 +22,8 @@
  *                 cut: mesh | null, fill: mesh | null, volumes: { cut, fill } | null, nc, laneWidth, lanes, assembly (text),
  *                 cutSlope, fillSlope, step, superOn, design, courses: [{ side, code, part, k, name, material, course, t, area, volume, length,
  *                 mesh (a closed solid under the part) }] }]   (courses: 0.7.1 71.24, corridor.js courseQuantities)
- *   surfaces: [{ key 'eg' | 'fg', name, pts: [{x, y, z}], faces: [[a, b, c]] (counter-clockwise from above) }]
+ *   surfaces: [{ key 'eg' | 'fg' | 'other', name, pts: [{x, y, z}], faces: [[a, b, c]] (counter-clockwise from above), id, desc ('other':
+ *              Slice 3, the project's other surfaces, project.otherSurfaces()) }]
  *   pads: [{ id, name, z, top: mesh, area, cut, fill (meshes | null), volumes, cutSlope, fillSlope, walls: [{ mesh, length, maxH, avgH,
  *            faceArea, thickness, volume }] }]
  *   network: null | { name, type, structures: [{ id, name, x, y, rim, bottom, shape, w, l, ang, kind, typeName }],
@@ -369,6 +370,8 @@ export function civilIfcModel(project, { species = null, lat = null, lon = null 
 
   if (eg) model.surfaces.push({ key: 'eg', name: s.surface.name || 'Existing ground', ...eg.toFaces() });   // i18n-ignore: IFC file data (fallback name)
   if (fg) model.surfaces.push({ key: 'fg', name: 'Proposed (graded) surface', ...fg.toFaces() });   // i18n-ignore: IFC file data
+  // Slice 3: the other surfaces (TINs) a file brought besides the existing ground, each under its own name (kept, not designed with)
+  for (const x of project.otherSurfaces?.() || []) if (x.surface) model.surfaces.push({ key: 'other', id: x.id, name: x.name, desc: x.desc || '', ...x.surface.toFaces() });
 
   for (const p of s.pads) {
     if ((p.pts || []).length < 3) continue;

@@ -24,7 +24,8 @@
  *                (lanes, shoulders, gutters, walks), IfcKerb (curbs), IfcGeographicElement (planting strips) as surfaces from the
  *                sections, IfcEarthworksCut / IfcEarthworksFill (the daylight slopes, the corridor's cut and fill volumes); the
  *                alignment is referenced in the road and positions its elements (IfcRelPositions); Pset_RoadDesignCriteriaCommon.
- *                Surfaces: IfcGeographicElement TERRAIN with IfcTriangulatedIrregularNetwork. Pads: TERRAIN top + earthworks + IfcWall
+ *                Surfaces (the existing ground, the graded surface and, Slice 3, every other surface the project keeps, ObjectType
+ *                'Other surface', each under its own name): IfcGeographicElement TERRAIN with IfcTriangulatedIrregularNetwork. Pads: TERRAIN top + earthworks + IfcWall
  *                RETAININGWALL. IfcPipeSegment / IfcDistributionChamberElement in an IfcDistributionSystem. Parcels: IfcGeographicElement
  *                'Parcel' footprints. Landscape (IfcGeographicElement VEGETATION, IfcPavement, IfcKerb, walls, ramps, steps) and the
  *                building masses (IfcBuilding > IfcBuildingStorey + IfcBuildingElementProxy) in the same IfcSite.
@@ -470,11 +471,12 @@ export function writeCivilIfc(model, { schema = 'IFC4X3_ADD2', now = new Date(),
     const pos = [];
     for (const q of s.pts) pos.push(q.x, q.y, q.z);
     const mesh = { pos, idx: s.faces.flat(), closed: false };
-    const label = s.key === 'eg' ? 'Existing ground' : 'Design surface';   // i18n-ignore: IFC file data
-    const el = element({ cls: 'IfcGeographicElement', pre: 'TERRAIN', name: s.name, label, tag: 'surface|' + s.key, rep: body(mesh, { tin: true }), extra: { ObjectType: S(label) } });
+    // i18n-ignore: IFC file data
+    const label = s.key === 'eg' ? 'Existing ground' : s.key === 'other' ? 'Other surface' : 'Design surface', stag = 'surface|' + (s.key === 'other' ? s.id : s.key);
+    const el = element({ cls: 'IfcGeographicElement', pre: 'TERRAIN', name: s.name, label, tag: stag, rep: body(mesh, { tin: true }), extra: { ObjectType: S(label), ...(s.desc ? { Description: S(s.desc) } : {}) } });
     put(site, el); counts.surfaces++;
     if (s.key === 'eg') egEl = el;
-    pset([el], 'CadCraft_Surface', [['Kind', label, 'label'], ['Points', s.pts.length, 'int'], ['Triangles', s.faces.length, 'int'], ['SurfaceArea', meshArea(mesh), 'area']], 'surface|' + s.key);
+    pset([el], 'CadCraft_Surface', [['Kind', label, 'label'], ['Points', s.pts.length, 'int'], ['Triangles', s.faces.length, 'int'], ['SurfaceArea', meshArea(mesh), 'area']], stag);
   }
 
   // ---- corridors: roads, their parts, earthworks
