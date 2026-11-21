@@ -37,7 +37,7 @@ import { Project, cleanDesign, SPEED_UNITS, recoverText } from './project.js';
 import { parsePoints, lassoPoints } from './points.js';
 import { lassoMode, nextMode, thin } from './lasso-core.js';
 import { civilTools, civilRollback } from './civil-agent.js';
-import { readLandXml, writeLandXml } from './landxml.js';
+import { landXmlSourceNotes } from './landxml.js';
 import { decodePartsAsync, partsOf, parseJsonParts } from './textin.js';   // 0.10 PERF.20
 const TEXT_PARTS_FROM = 32 * 1048576;
 import { planScene, toDxfEntities, LAYERS } from './scene.js';
@@ -785,6 +785,7 @@ function init(root) {
     } else fillDl(ui.surfaceInfo, [[t('cv.surface'), pts.length ? t('cv.sf.notbuilt') : t('cv.sf.noneyet')]]);
     const notes = [...(r.report?.errors || []), ...(r.report?.notes || [])];
     if (lastReport) notes.push(...lastReport);
+    notes.push(...landXmlSourceNotes(s.landXmlSource));
     ui.surfaceReport.replaceChildren(notes.length ? el('div', { className: 'cv-report' + (r.report?.errors?.length ? ' is-error' : '') }, el('ul', {}, ...notes.map((n) => el('li', {}, n)))) : '');
     if (ui.maxEdge.ownerDocument.activeElement !== ui.maxEdge) ui.maxEdge.value = s.surface.maxEdge || 0;
     ui.maxEdge.disabled = !!s.surface.tin;

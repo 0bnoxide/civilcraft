@@ -7,7 +7,7 @@
 import { t } from './i18n.js';
 import { decodePartsAsync, partsOf, parseJsonParts } from './textin.js';
 import { Project, MAX_MORE_PROFILES, MAX_MORE_SURFACES } from './project.js';
-import { readLandXml, writeLandXml } from './landxml.js';
+import { cleanLandXmlSource, readLandXml, writeLandXml } from './landxml.js';
 import { cleanRail, railDefaults } from './rail.js';
 import { cleanWater } from './water.js';
 import { waterFromNetwork, waterNetwork } from './water-objects.js';
@@ -70,6 +70,8 @@ export function mountFiles(ctx) {
     p.state.units = d.units || 'ft';
     if (p.state.units === 'ft' && d.foot) p.state.foot = d.foot;   // Slice 2: the foot the file named, kept for saving and export
     p.state.name = (d.name || name.replace(/\.[^.]+$/, '')).slice(0, 120);
+    const source = d.sourceVertical && cleanLandXmlSource({ ...d.sourceVertical, file: name });
+    if (source) p.state.landXmlSource = source;
     if (d.points.length) p.setPoints(d.points, name);
     const s0 = d.surfaces[0];
     if (s0) {

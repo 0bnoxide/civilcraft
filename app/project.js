@@ -97,6 +97,7 @@ import { cleanProgress } from './progress.js';   // 0.8 EG.39: the survey rows k
 import { cleanPowerlines } from './powerline/model.js';   // 0.7 PL: the Power lines workspace (docs/0.7-PART8.md)
 import { cleanDescKeys, cleanLineCodes, grouper, figures } from './desckeys.js';   // 0.4 V16: description keys, line codes
 import { t } from './i18n.js';
+import { cleanLandXmlSource } from './landxml.js';
 import { ChunkHistory, objectJournal, recoverState, recoverExtras, join } from './history/index.js';   // 0.10 PERF.21 / PERF.24: undo by change records, autosave that writes what changed
 import { cleanAcceptedCivil } from './problems-civilcraft.js';   // 0.7.1 → 0.8: problems accepted as intended (docs/0.8-PROBLEMS-SPEC.md)
 import { cleanIdsRecord, idsTextStore } from './ids/record.js';   // 0.7.1 71.25: the IDS the IFC export is checked against (cc-ids, lib/ids synced)
@@ -218,7 +219,17 @@ export class Project {
   snapshot() { const { tin, ...surf } = this.state.surface; const { display, ...rest } = this.state; return JSON.stringify({ ...rest, surface: surf, ...(rest.moreSurfaces ? { moreSurfaces: surfsLight(rest.moreSurfaces) } : {}) }); }
   /** Slice 3: remember the TIN of every other surface the state holds now (a change from Studio Live may remove one, and its undo bring it back). */
   keepSurfTins(state = this.state) { for (const x of state.moreSurfaces || []) if (x.tin) this.surfTins.set(x.id, x.tin); }
-  restore(json) { const s = JSON.parse(json); s.surface.tin = this.state.surface.tin; this.keepSurfTins(); if (s.moreSurfaces) s.moreSurfaces = surfsWithTins(s.moreSurfaces, this.state.moreSurfaces, this.surfTins); s.display = this.state.display; this.state = s; }
+  restore(json) {
+    const s = JSON.parse(json);
+    const source = cleanLandXmlSource(s.landXmlSource);
+    if (source) s.landXmlSource = source;
+    else delete s.landXmlSource;
+    s.surface.tin = this.state.surface.tin;
+    this.keepSurfTins();
+    if (s.moreSurfaces) s.moreSurfaces = surfsWithTins(s.moreSurfaces, this.state.moreSurfaces, this.surfTins);
+    s.display = this.state.display;
+    this.state = s;
+  }
   setDisplay(k, v) { if (this.state.display[k] === v) return; this.state.display[k] = v; this.touch('display'); }
   /** An undo step: `rec` the chunks the edit changed (before and after); `json` (live.js) the state's JSON before the step, for the newest step. */
   stepOf(label, rec, extra = {}) {
@@ -778,6 +789,7 @@ export class Project {
       ...((this.state.problems?.accepted || []).length ? { problems: { accepted: this.state.problems.accepted } } : {}),   // 0.7.1 → 0.8: the Problems panel's accepted list
       ...(this.state.ids && this.idsText() ? { ids: { ...this.state.ids, text: this.idsText() } } : {}),   // 0.7.1 71.25: the client's IDS { name, hash, text } (ids-ui.js; the text from idsTexts); older builds ignore it
       crs: this.state.crs,
+      ...(this.state.landXmlSource ? { landXmlSource: this.state.landXmlSource } : {}),
       gis: this.state.gis, gisFeatures: light ? {} : gisFeaturesJSON(this.gisFeatures),   // GIS: { id: [[geometry, props], …] }
       crsGrids: light ? {} : crsGridsJSON(this),   // 0.4 V11: { name: base64 } for the grid state.crs.grid names
       gisImages: light ? {} : gisImagesJSON(this),   // GIS: { 'img<n>': data URL } for the map layers that use them (builder C)
@@ -970,6 +982,8 @@ export class Project {
       if (nw.sewer && typeof nw.sewer === 'object') s.network.sewer = cleanSewer(nw.sewer, s.units);   // 0.6 LC.16 S1: sanitary design flows
     }
     s.crs = readCrs(obj.crs, str, fin, notes);
+    const source = cleanLandXmlSource(obj.landXmlSource);
+    if (source) s.landXmlSource = source;
     const pa = cleanAcceptedCivil(obj.problems?.accepted);   // 0.7.1 → 0.8: problems accepted as intended (older builds ignore the key)
     if (pa.length) s.problems = { accepted: pa };
     const idsRec = cleanIdsRecord(obj.ids);   // 0.7.1 71.25: the IDS the IFC export is checked against (untrusted, bounded)

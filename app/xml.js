@@ -4,6 +4,8 @@
  *
  *   parseXml(text) → root element { name, attrs: {}, children: [elements], text }   (throws XmlError)
  *     Namespace prefixes are dropped from element names (LandXML files use a default namespace).
+ *     The rawTopAttributes option takes exact attribute names to retain on the root and its direct children.
+ *     Those nodes also carry their qualified name and local namespace declarations in rawAttrs.
  *     Comments, processing instructions, DOCTYPE and CDATA are handled; DTDs/entities other than the
  *     five predefined and numeric character references are not expanded (no external fetches).
  *   kids(el, name) / kid(el, name) / textOf(el)
@@ -16,16 +18,33 @@ import { isParts, partsOf } from "./textin.js";
 export class XmlError extends Error {}
 
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const numericReference = (ref) => ref[1] === 'x' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+
 function decode(s) {
   if (s.indexOf('&') < 0) return s;
   return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (m, e) => {
-    if (e[0] === '#') { const cp = e[1] === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); try { return String.fromCodePoint(cp); } catch { return ''; } }
+    if (e[0] === '#') { const cp = numericReference(e); try { return String.fromCodePoint(cp); } catch { return ''; } }
     return ENT[e] ?? m;
   });
 }
+const ILLEGAL_XML_CHAR = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ud800-\udfff\ufffe\uffff]/u;
+
+/** Decodes a raw attribute only if its characters and references are valid. */
+export function decodeXmlAttribute(value) {
+  if (typeof value !== 'string' || value.includes('<') || ILLEGAL_XML_CHAR.test(value)) return null;
+  for (const [, ref] of value.matchAll(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);|&/g)) {
+    if (!ref) return null;
+    if (ref[0] !== '#') continue;
+    const cp = numericReference(ref);
+    if (cp > 0x10ffff || ILLEGAL_XML_CHAR.test(String.fromCodePoint(cp))) return null;
+  }
+  // Normalize XML line endings and literal whitespace before expanding references.
+  return decode(value.replace(/\r\n|[\t\n\r]/g, ' '));
+}
+
 const local = (n) => { const i = n.indexOf(':'); return i < 0 ? n : n.slice(i + 1); };
 
-export function parseXml(text, { maxDepth = 256 } = {}) {
+export function parseXml(text, { maxDepth = 256, rawTopAttributes = null } = {}) {
   // 0.10 PERF.20: `text` is a string or the parts of a big file (textin.js): the parser holds a window of the text (the part it is in
   // and what it needs next), never the whole file as one string. A string is one part, parsed as it always was.
   const parts = typeof text === 'string' ? [text] : isParts(text) ? partsOf(text) : [String(text)];
@@ -56,7 +75,10 @@ export function parseXml(text, { maxDepth = 256 } = {}) {
     let j = lt + 1;
     while (j < n && !/[\s/>]/.test(s[j])) j++;
     if (j >= n && canMore()) return NEED;
-    const el = { name: local(s.slice(lt + 1, j)), attrs: Object.create(null), children: [], text: '' };
+    const qualifiedName = s.slice(lt + 1, j);
+    const el = { name: local(qualifiedName), attrs: Object.create(null), children: [], text: '' };
+    const rawAttrs = rawTopAttributes && stack.length <= 2 ? Object.create(null) : null;
+    if (rawAttrs) Object.assign(el, { qualifiedName, rawAttrs });
     if (!el.name) throw new XmlError(t('xml.err.empty'));
     for (;;) {
       while (j < n && /\s/.test(s[j])) j++;
@@ -76,7 +98,11 @@ export function parseXml(text, { maxDepth = 256 } = {}) {
       if (q !== '"' && q !== "'") throw new XmlError(t('xml.err.unquoted', { tag: '<' + el.name + '>' }));
       const e = s.indexOf(q, k + 1);
       if (e < 0) { if (canMore()) return NEED; throw new XmlError(t('xml.err.attr', { tag: '<' + el.name + '>' })); }
-      if (!an.startsWith('xmlns')) el.attrs[local(an)] = decode(s.slice(k + 1, e));
+      const rawValue = s.slice(k + 1, e);
+      if (!an.startsWith('xmlns')) el.attrs[local(an)] = decode(rawValue);
+      if (rawAttrs && (rawTopAttributes.has(an) || an === 'xmlns' || an.startsWith('xmlns:'))) {
+        rawAttrs[an] = Object.hasOwn(rawAttrs, an) ? null : rawValue;
+      }
       j = e + 1;
     }
   }
