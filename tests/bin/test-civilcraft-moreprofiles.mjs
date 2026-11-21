@@ -24,7 +24,7 @@ const mod = (f) => import(pathToFileURL(path.join(APP, f)).href);
 const I18N = await mod('i18n.js');
 I18N.init({ strings: JSON.parse(fs.readFileSync(path.join(APP, 'lang/en.json'), 'utf8')) });
 const t = I18N.t;
-const LX = await mod('landxml.js'), PJ = await mod('project.js');
+const LX = await mod('landxml.js'), PJ = await mod('project.js'), AG = await mod('civil-agent.js');
 
 let pass = 0, fail = 0;
 const ok = (c, m, x) => { if (c) { pass++; if (VERBOSE) console.log('  ok   ' + m); } else { fail++; console.log('  FAIL ' + m + (x !== undefined ? ' — ' + JSON.stringify(x).slice(0, 400) : '')); } };
@@ -80,6 +80,8 @@ try {
   ok((out.match(/<Profile /g) || []).length === 1, 'inside one Profile element');
   const again = LX.readLandXml(out);
   ok(again.alignments[0].profiles.every((x, i) => x.name === S3[i] && same(x.pvis, d.alignments[0].profiles[i].pvis)), 'reading the export gives the same names and PVIs');
+
+  ok(JSON.stringify(names(AG.landXmlOf(back))) === JSON.stringify(S3), "the assistant's LandXML export writes the same three", names(AG.landXmlOf(back)));
 
   section('make another profile the design profile');
   const q = reopen(p), id = q.state.alignments[0].id;
