@@ -4274,6 +4274,8 @@
   "cv.saved.dl": "Saved {name} (downloaded).",
   "cv.export.none": "Nothing to export yet.",
   "cv.lx.exported": "Exported LandXML 1.2: {list}. Pads are not part of LandXML here; the graded surface is.",
+  "cv.lx.source.datum": "Opened LandXML “{file}” declared the vertical datum “{name}” (unverified).",
+  "cv.lx.source.verticalSystem": "Opened LandXML “{file}” declared the vertical coordinate system “{name}” (unverified).",
   "cv.lx.als.skipped": "{alignments} ({n} with errors left out)",
   "cv.lx.network": "the pipe network",
   "cv.dxf.done": {

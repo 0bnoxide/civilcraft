@@ -21,6 +21,7 @@
  *     foot        Slice 2: 'ft' (linearUnit foot) | 'ftUS' (USSurveyFoot) | null (metres, or a foot not named)
  *     coordinateSystem  null | { name, epsgCode (number | null), ogcWktCode (text | null), desc } (GIS: offered as the
  *                       project's system when opened)
+ *     sourceVertical?  { verticalDatum?, verticalCoordinateSystemName? }, unverified declarations from the source header
  *     surfaces    [{ name, desc, pts:[{x,y,z}|null], faces:[[i,j,k]], breaklines:[{name,pts}], boundary:[{x,y}]|null }]
  *     alignments  [{ name, start, pis:[{x,y,r,ls1?,ls2?}], profiles:[{name, pvis:[{sta,z,L}]}], surfProfiles:[{name, pts}], eqs? }]
  *                 eqs: <StaEquation> [{ internal, ahead, back?, desc? }] (written back from the Alignment's eqs); every other
@@ -35,7 +36,7 @@
  */
 
 import { t } from "./i18n.js";
-import { parseXml, kids, kid, textOf, esc } from './xml.js';
+import { parseXml, decodeXmlAttribute, kids, kid, textOf, esc } from './xml.js';
 import { METRES_PER, formatStation, footOf, footOfLinearUnit, LANDXML_FOOT } from './units.js';
 import { groupKey } from './points.js';
 import { cubicParamFor, buildAlignment } from './alignment.js';   // 0.7.1 71.26: rail transitions in and out; CV.1: the curves' stations for a Cant read back
@@ -264,8 +265,74 @@ export function writeLandXml({ name = 'CivilCraft project', units = 'ft', foot =
 
 const nums = (s) => { const t = String(s || '').trim(); return t ? t.split(/[\s,]+/).map(Number) : []; };
 
+const VERTICAL_NAME_LIMIT = 200;
+const UNSAFE_SOURCE_TEXT = /[\u0000-\u001f\u007f\ud800-\udfff\ufffe\uffff\p{Bidi_Control}]/u;
+
+function sourceText(value, maxLength) {
+  return typeof value === 'string' && value.length <= maxLength && !UNSAFE_SOURCE_TEXT.test(value) ? value.trim() : '';
+}
+
+function verticalNames(source) {
+  const verticalDatum = sourceText(source.verticalDatum, VERTICAL_NAME_LIMIT);
+  const verticalCoordinateSystemName = sourceText(source.verticalCoordinateSystemName, VERTICAL_NAME_LIMIT);
+  if (!verticalDatum && !verticalCoordinateSystemName) return null;
+  return { ...(verticalDatum ? { verticalDatum } : {}), ...(verticalCoordinateSystemName ? { verticalCoordinateSystemName } : {}) };
+}
+
+/** Source history for a project. The file name and declarations are untrusted text. */
+export function cleanLandXmlSource(source) {
+  if (typeof source?.file !== 'string') return null;
+  const file = sourceText(source.file.split(/[\\/]/).pop(), 255);
+  if (!file || file === '.' || file === '..') return null;
+  const names = verticalNames(source);
+  return names ? { file, ...names } : null;
+}
+
+export function landXmlSourceNotes(source) {
+  if (!source) return [];
+  const { file, verticalDatum, verticalCoordinateSystemName } = source;
+  const notes = [];
+  if (verticalDatum) notes.push(t('cv.lx.source.datum', { file, name: verticalDatum }));
+  if (verticalCoordinateSystemName) notes.push(t('cv.lx.source.verticalSystem', { file, name: verticalCoordinateSystemName }));
+  return notes;
+}
+
+const VERTICAL_NAMES = new Set(['verticalDatum', 'verticalCoordinateSystemName']);
+const LANDXML_NAMESPACE = /^http:\/\/www\.landxml\.org\/schema\/LandXML-1\.[012]$/;
+
+function headerNamespace(element, parentAttrs = null) {
+  const colon = element.qualifiedName.indexOf(':');
+  const key = colon < 0 ? 'xmlns' : 'xmlns:' + element.qualifiedName.slice(0, colon);
+  const raw = Object.hasOwn(element.rawAttrs, key) ? element.rawAttrs[key] : parentAttrs?.[key];
+  if (raw === undefined) return colon < 0 ? '' : null;
+  const ns = decodeXmlAttribute(raw);
+  return colon >= 0 && !ns ? null : ns;
+}
+
+function declaredVerticalNames(root) {
+  const ns = headerNamespace(root);
+  if (ns === null || (ns && !LANDXML_NAMESPACE.test(ns))) return null;
+  const headers = root.children.filter((el) => el.name === 'CoordinateSystem' && headerNamespace(el, root.rawAttrs) === ns);
+  const names = {};
+  // Each field is independent. Once two valid declarations disagree, omit that field.
+  for (const field of VERTICAL_NAMES) {
+    let agreed = '';
+    for (const header of headers) {
+      const value = sourceText(decodeXmlAttribute(header.rawAttrs[field]), VERTICAL_NAME_LIMIT);
+      if (!value) continue;
+      if (agreed && value !== agreed) {
+        agreed = '';
+        break;
+      }
+      agreed = value;
+    }
+    if (agreed) names[field] = agreed;
+  }
+  return Object.keys(names).length ? names : null;
+}
+
 export function readLandXml(text) {
-  const root = parseXml(text);
+  const root = parseXml(text, { rawTopAttributes: VERTICAL_NAMES });
   if (root.name !== 'LandXML') throw new Error(t('lx.err.root', { tag: '<' + root.name + '>' }));
   const notes = [];
   const note = (m) => { if (!notes.includes(m)) notes.push(m); };
@@ -291,6 +358,8 @@ export function readLandXml(text) {
     out.coordinateSystem = { name: String(a.name || a.projectedCoordinateSystemName || a.horizontalCoordinateSystemName || '').slice(0, 200), epsgCode: code ? Number(code[1]) : null, ogcWktCode: wkt && wkt.length <= 20000 ? wkt : null, desc: String(a.desc || '').slice(0, 500) };
     if (!out.coordinateSystem.epsgCode && !out.coordinateSystem.ogcWktCode && !out.coordinateSystem.name) out.coordinateSystem = null;
   }
+  const sourceVertical = declaredVerticalNames(root);
+  if (sourceVertical) out.sourceVertical = sourceVertical;
 
   // points (CgPoints can nest)
   const seen = new Set();
