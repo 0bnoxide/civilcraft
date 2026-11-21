@@ -11,7 +11,7 @@
  *   p.change(label, (s) => { … edit p.state … })   one undo step; p.undo() / p.redo()
  *   p.eg()            { surface, report }     existing ground (points + breaklines + boundary, or a TIN read from LandXML)
  *   p.contours()      [{z, pts, closed}]      at state.display.interval
- *   p.alignment(a)    Alignment               p.egProfile(a) [{sta, z}]   p.designProfile(a) Profile
+ *   p.alignment(a)    Alignment               p.egProfile(a) [{sta, z}]   p.designProfile(a) Profile   p.designProfileName(a)
  *   p.graded()        { surface, report, regions, items:[{id, kind:'corridor'|'pad', problems, region, …}] }
  *                     EG with every corridor (alignments with corridor.on) and pad graded in
  *   p.volumes()       gridVolume between EG and the graded surface inside the daylight lines (+ .items per item)
@@ -28,6 +28,7 @@
  *   0.7.1 71.26: an alignment may carry rail: rail.js cleanRail (a track: cant per PI `pis[i].cant` mm, transition `pis[i].tr`);
  *   p.railPlan(a) (cantPlan), p.railWarnings(); its corridor is then built as a track (corridor.js asm.rail via railAsm).
  *   alignments may carry eqs: [{ internal, ahead, back?, desc? }] (station equations; every stored station stays internal: alignment.js)
+ *   and profName: the design profile's name from its source (LandXML ProfAlign); export writes it back (Slice 3; absent: "<alignment> design")
  *   alignments also carry corridor: null | { on, lane, laneSlope, shoulder, shoulderSlope, cut, fill, step, super?, targets? (0.6
  *   WL.25: corridor.js cleanTargets; corridorOrder() grades a corridor after the ones it targets) } (corridor.js;
  *   super: superelev.js, 0.4 V18)
@@ -382,6 +383,7 @@ export class Project {
     return this.memo('eg:' + a.id, this.surfaceDeps() + JSON.stringify([a.pis, a.start]), () => sampleSurface(sf, al));
   }
   designProfile(a) { return this.memo('fg:' + a.id, JSON.stringify(a.pvis), () => buildProfile(a.pvis || [])); }
+  designProfileName(a) { return a.profName || t('cv.lx.design', { name: a.name }); }   // Slice 3: the source's name for it, else "<alignment> design"
 
   padsDeps(tag = 'fg') { return tag === 'eg' ? '' : this.gradeDeps(); }
   /** What the graded surface depends on besides the existing ground: pads, and alignments with a corridor on. */
@@ -847,7 +849,8 @@ export class Project {
       const design = cleanDesign(a.design);   // 0.7.1 71.24: design speed and class (older files: none)
       const rail = cleanRail(a.rail, s.units);   // 0.7.1 71.26: a track (older files: none)
       const eqs = cleanEquations(a.eqs);   // Slice 1: station equations (older files: none)
-      return { id: id(a.id, 'a'), name: str(a.name, 120) || t('scene.al.default'), start: fin(a.start) ? a.start : 0, pis, pvis, corridor, sampling: cleanSampling(a.sampling, s.units), ...(more.length ? { corridors: more } : {}), ...(minR ? { minR } : {}), ...(design ? { design } : {}), ...(rail ? { rail } : {}), ...(eqs.length ? { eqs } : {}) };
+      const profName = typeof a.profName === 'string' ? str(a.profName, 120).trim() : '';   // Slice 3: the design profile's source name (older files: none)
+      return { id: id(a.id, 'a'), name: str(a.name, 120) || t('scene.al.default'), start: fin(a.start) ? a.start : 0, pis, pvis, corridor, sampling: cleanSampling(a.sampling, s.units), ...(more.length ? { corridors: more } : {}), ...(minR ? { minR } : {}), ...(design ? { design } : {}), ...(rail ? { rail } : {}), ...(eqs.length ? { eqs } : {}), ...(profName ? { profName } : {}) };
     }, 1000);
     s.pads = list(obj.pads, (d) => {
       const q = list(d?.pts, xy, 1e4);
