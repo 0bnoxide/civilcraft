@@ -46,7 +46,7 @@ import { PAPERS, paperBy, scalesFor, fitScale, planSheet, toPdf, sheetWindow } f
 import { PlanView, mix, LABEL_FONT } from './view.js';
 import { ProfileView } from './profile-view.js';
 import { snapProfile, slopeOut, setSlope } from './profile-snap.js';   // CV.3 (#1534): snap, slope column and lock in the profile
-import { unitOf, formatStation, parseStation, fixed, pct, volumeText, areaText, dms, bearing, isNum, readLength, grouped, newProjectUnits, footMismatch, footWarning, TABLE_ID as UNIT_TABLE_ID } from './units.js';
+import { unitOf, formatStation, parseStation, fixed, pct, volumeText, areaText, dms, bearing, isNum, readLength, grouped, newProjectUnits, footOf, projectUnitName, footMismatch, footWarning } from './units.js';
 import { limitSelect, onUnitsChange } from './unit-prefs.js';   // 0.7 UNITS: Settings › General › Units
 import { buildProfile } from './profile.js';
 import { polyArea, pointInPoly } from './tin.js';
@@ -750,7 +750,11 @@ function init(root) {
   function renderLeft() {
     const s = project.state, U = u();
     if (ui.name.ownerDocument.activeElement !== ui.name) ui.name.value = s.name;   // the panel may be in the panels window
-    limitSelect(ui.units, 'length', { map: (v) => UNIT_TABLE_ID[v], keep: [s.units] });   // 0.7 UNITS: units turned on + the project's
+    const footId = footOf('ft', s.crs, s.foot) === 'ft' ? 'ft' : 'usft';
+    limitSelect(ui.units, 'length', { map: (v) => v === 'ft' ? footId : v, keep: [s.units] });
+    const feet = [...ui.units.options].find((o) => o.value === 'ft');
+    const feetName = projectUnitName(s, 'ft');
+    if (feet && feet.textContent !== feetName) feet.textContent = feetName;
     ui.units.value = s.units;
     for (const e of unitLabels) e.textContent = U.short;
     // points
@@ -2021,7 +2025,7 @@ function init(root) {
 
   // ------------------------------------------------------------------ left panel inputs
   ui.name.addEventListener('change', () => project.change(t('cv.undo.project.rename'), (s) => { s.name = ui.name.value.trim().slice(0, 120) || t('project.untitled'); }));
-  ui.units.addEventListener('change', () => { project.change(t('cv.undo.units'), (s) => { s.units = ui.units.value === 'm' ? 'm' : 'ft'; }); say(t('cv.units.now', { units: u().name.toLowerCase() })); });
+  ui.units.addEventListener('change', () => { project.change(t('cv.undo.units'), (s) => { s.units = ui.units.value === 'm' ? 'm' : 'ft'; }); say(t('cv.units.now', { units: projectUnitName(project.state).toLowerCase() })); });
   onUnitsChange(() => refresh());   // 0.7 UNITS: a change in Settings › General › Units (lists, starred area / volume units)
   ui.gridMethod.addEventListener('change', () => project.change(t('cv.undo.gridmethod'), (st) => { if (ui.gridMethod.value === 'tin') { delete st.surface.method; delete st.surface.gridStep; delete st.surface.gridPower; delete st.surface.gridQ; delete st.surface.gridAcc; } else st.surface.method = ui.gridMethod.value; }));
   ui.gridStep.addEventListener('change', () => { const v = Number(ui.gridStep.value); if (!(v >= 0)) { ui.gridStep.setAttribute('aria-invalid', 'true'); return; } ui.gridStep.removeAttribute('aria-invalid'); project.change(t('cv.undo.gridstep'), (st) => { if (v > 0) st.surface.gridStep = v; else delete st.surface.gridStep; }); });

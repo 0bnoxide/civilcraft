@@ -46,6 +46,11 @@ export function footOf(units, crs = null, foot = null) {
   if (foot === 'ft' || foot === 'ftUS') return foot;
   return crs?.unit === 'ft' ? 'ft' : 'ftUS';
 }
+/** The name for a project unit control; the optional unit also labels an unselected choice. */
+export function projectUnitName(state, units = state.units) {
+  const unit = footOf(units, state.crs, state.foot);
+  return t(unit === 'm' ? 'units.m' : unit === 'ft' ? 'crs.unit.ft' : 'crs.unit.ftus');
+}
 /** The project's foot and its coordinate system's when they differ (the source named one foot, the system uses the other), else null. */
 export function footMismatch(state) {
   if (!state || state.units === 'm' || (state.foot !== 'ft' && state.foot !== 'ftUS')) return null;
