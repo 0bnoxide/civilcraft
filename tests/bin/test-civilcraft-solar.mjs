@@ -16,7 +16,9 @@ const ok = (c, m, x) => { if (c) pass++; else { fail++; console.log('FAIL ' + m 
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 const RAD = Math.PI / 180;
 
-ok(drift(['civilcraft']).length === 0, 'the PV engine in civilcraft/dev/pv is byte-identical to BimCraft\'s (tools/pv/sync.mjs --check)', drift(['civilcraft']).map((d) => d.file));
+// BimCraft's pv*.js (the canonical engine) is not in CivilCraft's public repo: the copy is compared on the site only
+if (fs.existsSync(path.join(REPO, 'public_html/assets/apps/bimcraft/dev/pv.js'))) ok(drift(['civilcraft']).length === 0, 'the PV engine in civilcraft/dev/pv is byte-identical to BimCraft\'s (tools/pv/sync.mjs --check)', drift(['civilcraft']).map((d) => d.file));
+else console.log('  (no BimCraft pv.js in this checkout: the byte-identical check of civilcraft/dev/pv is run on the site only)');
 
 const site = { lat: 40, lon: -105, tz: -7 };
 const poly = (x0, y0, x1, y1) => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
