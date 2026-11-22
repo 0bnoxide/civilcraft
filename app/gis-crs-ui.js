@@ -565,9 +565,11 @@ export function install(host) {
         convert = ans === 'convert';
       }
       const before = current;
+      let moveGis = null;
       if (convert) {
         let res = null, err = null;
         try {
+          moveGis = reg.prepareGisMove?.(next);
           const fOld = frame(current), fNew = frame(next).from(current);
           const map = (x, y) => fNew(...fOld.toGrid(x, y));
           p.editPoints(t('crs.d.undo.convert', { crs: next.name }), (pts, st) => {
@@ -586,6 +588,7 @@ export function install(host) {
         host.say(t(next.local ? (gmode === 'ground' ? 'crs.d.set.ground' : 'crs.d.set.local') : 'crs.d.set', { crs: next.name, f: next.local?.scale }));
       }
       for (const f of reg.crsChange) { try { f(before, next, { converted: convert }); } catch (e) { console.warn(e); } }
+      moveGis?.('vec.move.converted');
       finish(next);
     }
     async function removeSystem() {

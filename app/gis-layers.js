@@ -83,14 +83,25 @@ export function setLayer(project, id, patch) {
     if ('symbology' in patch) { if (sym) x.symbology = sym; else delete x.symbology; }   // 0.9 SU.1080 round 2
   });
 }
-export function transformLayers(project, fn, label = t('layers.undo.move')) {
-  return project.editGis(label, (map) => { for (const [id, fs] of map) map.set(id, fs.map((f) => ({ g: mapXY(f.g, fn), p: f.p }))); return map; });
+function mapLayers(map, fn) {
+  for (const [id, fs] of map) map.set(id, fs.map((f) => ({ g: mapXY(f.g, fn), p: f.p })));
+  return map;
 }
-/** The project's system changed from `before` to `after` (state.crs shapes): move every layer from where it belongs under
- *  `before` to where it belongs under `after` (project → grid of before → after's grid → after's project). One step. */
-export function moveLayers(project, before, after) {
+export function transformLayers(project, fn, label = t('layers.undo.move')) {
+  return project.editGis(label, (map) => mapLayers(map, fn));
+}
+/** Stage a reprojection of the supplied layers without editing the project. */
+export function reprojectLayers(features, before, after) {
   const fb = frame(before), fa = frame(after), tf = fb.to(after);
-  return transformLayers(project, (x, y) => { const g = tf(x, y); return fa.fromGrid(g[0], g[1]); }, t('layers.undo.moveto', { crs: after.name }));
+  return mapLayers(new Map(features), (x, y) => {
+    const point = fa.fromGrid(...tf(x, y));
+    if (!point.every(Number.isFinite)) throw new Error(t('crs.reproject.coord'));
+    return point;
+  });
+}
+/** Move every layer to the new system in one GIS undo step. */
+export function moveLayers(project, before, after) {
+  return project.editGis(t('layers.undo.moveto', { crs: after.name }), (map) => reprojectLayers(map, before, after));
 }
 
 // ---------------------------------------------------------------- bounds and picking (cached per features array)
