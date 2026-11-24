@@ -1,0 +1,23 @@
+{
+  "format": "cadcraft-workspace",
+  "version": 1,
+  "id": "vector",
+  "name": "Vector",
+  "nameKey": "shell.ws.vector",
+  "hintKey": "shell.ws.vector.hint",
+  "description": "A classic desktop drawing workspace: a menu bar (File, Edit, View, Modify, Model, AEC, Tools, Text, Window, Cloud, Help), a view bar and a mode bar over the drawing, Basic and Tool Sets palettes on the left, Object Info and Navigation on the right, document tabs and a coordinate strip.",
+  "author": "CadCraft",
+  "license": "Apache-2.0",
+  "look": { "density": "compact", "outline": "box", "tabs": "filled" },
+  "blocks": [
+    { "block": "menubar", "place": "top", "order": 0 },
+    { "block": "toolbar", "place": "none" },
+    { "block": "infobox", "place": "stage-top", "order": 0, "slots": ["level", "document", "scale", "detail"] },
+    { "block": "options", "place": "stage-top", "order": 1 },
+    { "block": "toolpalette", "place": "stage-left", "order": 0, "columns": 4, "icons": "set", "attributes": true },
+    { "block": "palettes", "place": "right-panel", "upper": "properties", "lower": ["browser", "panel"] },
+    { "block": "viewtabs", "place": "view-top", "order": 0, "mode": "open" },
+    { "block": "quickbar", "place": "stage-bottom", "order": 0, "slots": ["fit", "layout", "units"] },
+    { "block": "statusbar", "place": "bottom", "order": 0 }
+  ]
+}

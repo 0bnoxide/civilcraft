@@ -81,16 +81,15 @@ const notes = [];
 // 1. The build (rendered and source-only files left out; an add-on's own tests too).
 const appRel = `assets/apps/${slug}/${label}`;
 copyTree(SRC, path.join(ed, appRel), (p) => path.basename(p) === 'node_modules'
-  || /^(ui|settings)\.inc$|\.md$|(^|\/)\.|^addons\/[^/]+\/test(\/|$)/.test(rel(p, SRC)));
+  || /^(ui|settings)\.inc$|\.(md|orig)$|(^|\/)\.|^addons\/[^/]+\/test(\/|$)/.test(rel(p, SRC)));
 
-// 2. The shared shell.
-for (const f of ['assets/css/tokens.css', 'assets/css/site.css', 'assets/css/app-shell.css', 'assets/css/help.css',
-  'assets/js/site.js', 'assets/js/app-shell.js', 'assets/js/app-settings.js', 'assets/js/app-panels.js', 'assets/js/app-phone.js',
-  'assets/js/app-offline.js', 'assets/js/app-input.js', 'assets/js/app-input-ui.js', 'assets/css/app-input.css', 'assets/js/app-propgrid.js', 'assets/css/app-propgrid.css', 'assets/js/app-workspace.js', 'assets/js/app-workspace-format.js', 'assets/js/app-workspace-popout.js', 'assets/js/app-windows.js', 'assets/js/app-workspace-input.js', 'assets/js/app-workspace-extras.js', 'assets/js/app-workspace-icons.js', 'assets/js/app-workspace-vector.js', 'assets/js/app-workspace-arrange.js', 'assets/js/app-state.js', 'assets/js/app-workspace-blocks.js', 'assets/js/app-workspace-overflow.js', 'assets/js/app-workspace-tools.js', 'assets/js/app-workspace-edit.js', 'assets/js/app-dock.js', 'assets/js/app-block-core.js', 'assets/js/app-block-ribbonx.js', 'assets/js/app-block-density.js', 'assets/js/app-block-labels.js', 'assets/js/app-block-index.js', 'assets/js/app-block-commandline.js', 'assets/js/app-block-modeltabs.js', 'assets/js/app-block-statusx.js', 'assets/js/app-block-titlebar.js', 'assets/js/app-block-tone.js', 'assets/js/app-block-viewoverlays.js', 'assets/js/app-pen.js', 'assets/css/app-dock.css', 'assets/css/app-block.css', 'assets/js/app-cmdline.js', 'assets/css/app-workspace.css', 'assets/workspaces/docked.ccworkspace.json', 'assets/workspaces/toolbox.ccworkspace.json', 'assets/workspaces/duncan.ccworkspace.json', 'assets/js/app-hardware.js', 'assets/js/calc.js', 'assets/js/reasons.js', 'assets/js/totals.js', 'assets/js/lessons.js', 'assets/js/app-tools-ui.js', 'assets/js/app-calc.js', 'assets/js/app-reasons.js', 'assets/js/app-totals.js', 'assets/js/app-lessons.js', 'assets/css/app-tools.css', 'assets/js/ai-suggest.js', 'assets/js/ai-activity.js', 'assets/js/ai-ask.js', 'assets/js/assist-perms.js', 'assets/js/app-ai-ui.js', 'assets/js/app-ai-suggest.js', 'assets/js/app-ai-activity.js', 'assets/js/app-ai-ask.js', 'assets/js/app-ai-ownkey.js', 'assets/js/app-ai-assist.js', 'assets/js/ai-model-only.js', 'assets/js/ai-history.js', 'assets/js/ai-teach.js', 'assets/js/ai-principles.js', 'assets/js/ai-signoff.js', 'assets/js/ai-teacher.js', 'assets/js/knowledge-pack.js', 'assets/css/app-ai.css', 'assets/js/app-access.js', 'assets/js/fields.js', 'assets/js/app-fields.js', 'assets/js/compute/probe.js', 'assets/js/compute/probe-light.js', 'assets/js/compute/report.js', 'assets/js/help-panel.js', 'assets/js/help-core.js', 'assets/js/i18n.js', 'assets/js/app-lang-boot.js',
-  'favicon.svg', 'favicon.ico', 'favicon-32.png']) {
-  fs.mkdirSync(path.dirname(path.join(ed, f)), { recursive: true });
-  fs.copyFileSync(path.join(SITE, f), path.join(ed, f));
+// 2. The shared shell, including the modules loaded by the workspace and analysis tools.
+const shellBootstrap = path.join(SITE, 'assets/js/bootstrap');   // the vendor step below packs Bootstrap by version
+for (const [dir, suffix] of [['assets/js', '.js'], ['assets/css', '.css'], ['assets/workspaces', '.ccworkspace.json']]) {
+  copyTree(path.join(SITE, dir), path.join(ed, dir),
+    (p) => p === shellBootstrap || (fs.statSync(p).isFile() && !p.endsWith(suffix)));
 }
+for (const f of ['favicon.svg', 'favicon.ico', 'favicon-32.png']) fs.copyFileSync(path.join(SITE, f), path.join(ed, f));
 fs.copyFileSync(path.join(KIT_DIR, 'sw.js'), path.join(ed, 'sw.js'));
 // The shell's language files, read by assets/js/app-lang-boot.js when the chosen language is not English (the page itself is packed in English).
 copyTree(path.join(SITE, 'assets/lang/shell'), path.join(ed, 'assets/lang/shell'), (p) => !p.endsWith('.json') && fs.statSync(p).isFile());

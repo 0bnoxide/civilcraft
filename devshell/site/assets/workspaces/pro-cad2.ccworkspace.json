@@ -1,0 +1,22 @@
+{
+  "format": "cadcraft-workspace",
+  "version": 1,
+  "id": "pro-cad2",
+  "name": "PRO-cad2 Workbench",
+  "nameKey": "shell.ws.procad2",
+  "hintKey": "shell.ws.procad2.hint",
+  "description": "The workbench of the mechanical and parametric design programs, in the Pro skin: a dark title bar, one command bar of named tool groups with the full set under each group, the browser tree over Properties on the left, document tabs, a navigation bar under the model, an edit palette by the pointer and a status bar. The same chrome, sizes and icon colour in every app.",
+  "author": "CadCraft",
+  "license": "Apache-2.0",
+  "look": { "density": "compact", "outline": "none", "tabs": "underline", "skin": "pro" },
+  "blocks": [
+    {"block": "titlebar", "place": "top", "order": 0, "quick": ["open", "save", "undo", "redo"]},
+    {"block": "toolrows", "place": "top", "order": 1, "split": 12, "visible": 5, "tearOff": true, "icons": "set"},
+    {"block": "toolbar", "place": "none"},
+    {"block": "palettes", "place": "left-panel", "upper": "browser", "lower": ["properties", "panel"]},
+    {"block": "viewtabs", "place": "view-top", "order": 0, "mode": "open"},
+    {"block": "quickbar", "place": "stage-bottom", "order": 0, "slots": ["fit", "detail", "scale", "layout", "units"]},
+    {"block": "petpalette", "place": "float"},
+    {"block": "statusbar", "place": "bottom", "order": 0}
+  ]
+}

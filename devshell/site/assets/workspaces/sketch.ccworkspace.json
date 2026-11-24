@@ -1,0 +1,21 @@
+{
+  "format": "cadcraft-workspace",
+  "version": 1,
+  "id": "sketch",
+  "name": "Sketch",
+  "nameKey": "shell.ws.sketch",
+  "hintKey": "shell.ws.sketch.hint",
+  "description": "A 3D modelling workspace for people who draw and push/pull: a menu bar (File, Edit, View, Camera, Draw, Tools, Window, Extensions, Help), rows of tool icons over the drawing, a slim column of drawing tools down the left, a tray on the right (Entity info, Properties, Browser), document tabs and a status line.",
+  "author": "CadCraft",
+  "license": "Apache-2.0",
+  "look": { "density": "compact", "outline": "faint", "tabs": "filled" },
+  "blocks": [
+    { "block": "menubar", "place": "top", "order": 0, "set": "sketch" },
+    { "block": "toolrows", "place": "top", "order": 1, "visible": 7, "tearOff": true, "icons": "set" },
+    { "block": "toolbar", "place": "none" },
+    { "block": "toolpalette", "place": "stage-left", "order": 0, "columns": 1, "sets": false, "basic": "sketch", "icons": "set" },
+    { "block": "palettes", "place": "right-panel", "upper": "properties", "lower": ["browser", "panel"] },
+    { "block": "viewtabs", "place": "view-top", "order": 0, "mode": "open" },
+    { "block": "statusbar", "place": "bottom", "order": 0 }
+  ]
+}

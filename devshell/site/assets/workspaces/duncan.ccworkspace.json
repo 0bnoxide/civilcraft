@@ -1,0 +1,19 @@
+{
+  "format": "cadcraft-workspace",
+  "version": 1,
+  "id": "duncan",
+  "name": "Duncan",
+  "nameKey": "shell.ws.duncan",
+  "hintKey": "shell.ws.duncan.hint",
+  "description": "A reduced default for fast learning: a top bar, two rows of about 40 tools with the full sets one click away under each ▾, an icon rail with one panel beside it, a command line docked in the status strip, and nothing floating over the drawing. Every bar, group and panel can be torn off.",
+  "author": "CadCraft (from Duncan Philips's interface mockup, BimCraft 0.2.0)",
+  "license": "Apache-2.0",
+  "look": { "density": "compact", "outline": "box", "tabs": "underline" },
+  "blocks": [
+    { "block": "titlebar", "place": "top", "order": 0, "quick": ["open", "save", "undo", "redo"], "inventory": true },
+    { "block": "toolrows", "place": "top", "order": 1, "visible": 7, "tearOff": true, "icons": "set" },
+    { "block": "toolbar", "place": "none" },
+    { "block": "palettes", "place": "left-panel", "upper": "properties", "lower": ["browser", "panel"], "rail": true },
+    { "block": "statusbar", "place": "bottom", "order": 0, "command": true, "tearOff": true }
+  ]
+}

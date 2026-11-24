@@ -300,7 +300,7 @@ for (const state of ['pending', 'unreadable', 'registered']) {
     try {
       if (gate) await gate.entered;
       else await p.crsGridLoad.ready;
-      const original = structuredClone(p.points);
+      const original = structuredClone([...p.points]);
       const target = C.crsFromEntry(C.byCode(2277));
       const expected = state === 'registered' ? C.frame(target).from(p.state.crs)(original[0].x, original[0].y) : null;
       const finished = h.editCrs();
@@ -319,7 +319,7 @@ for (const state of ['pending', 'unreadable', 'registered']) {
         assert.equal(p.points[0].z, original[0].z);
       } else {
         assert.equal(p.state.crs.code, 32039);
-        assert.deepEqual(p.points, original);
+        assert.deepEqual([...p.points], original);
         assert.equal(h.status.length, 1);
         assert.match(dlg.find((x) => x.className === 'cv-crs-problem' && x.attrs.role === 'alert').textContent, /grid shift file/i);
         dlg.close();
@@ -336,20 +336,20 @@ test('detach and immediate undo cannot revive a pending survey file import', asy
     pts: [{ x: 10, y: 20, z: 30 }, { x: 20, y: 20, z: 31 }, { x: 10, y: 30, z: 32 }], faces: [[0, 1, 2]],
   } };
   const p = await h.open(data);
-  const before = structuredClone(p.points), tin = structuredClone(p.state.surface.tin), messages = h.status.length;
+  const before = structuredClone([...p.points]), tin = structuredClone(p.state.surface.tin), messages = h.status.length;
   let fresh;
   try {
     await old.entered;
     const canceled = h.previewImport();
     await setImmediate();
-    assert.deepEqual(p.points, before);
+    assert.deepEqual([...p.points], before);
     assert.deepEqual(p.state.surface.tin, tin);
     fresh = deferDecode();
     detach(p);
     p.undo();
     await fresh.entered;
     await canceled;
-    assert.deepEqual(p.points, before);
+    assert.deepEqual([...p.points], before);
     assert.deepEqual(p.state.surface.tin, tin);
     assert.equal(h.status.length, messages);
     old.release();

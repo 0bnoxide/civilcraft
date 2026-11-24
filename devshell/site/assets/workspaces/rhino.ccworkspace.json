@@ -1,0 +1,22 @@
+{
+  "format": "cadcraft-workspace",
+  "version": 1,
+  "id": "rhino",
+  "name": "Multi-view",
+  "nameKey": "shell.ws.rhino",
+  "hintKey": "shell.ws.rhino.hint",
+  "description": "A curve, surface and solid modelling workspace for people who drive a model from a command line: a menu bar (File, Edit, View, Curve, Surface, Solid, Mesh, Dimension, Transform, Tools, Analyze, Render, Panels, Help), rows of tool icons over the drawing, two columns of drawing tools down the left, the drawing area split into Top, Front, Right and Perspective views where the app has them, a panel on the right and a command line in the status strip.",
+  "author": "CadCraft",
+  "license": "Apache-2.0",
+  "look": { "density": "compact", "outline": "faint", "tabs": "underline" },
+  "blocks": [
+    { "block": "menubar", "place": "top", "order": 0, "set": "rhino" },
+    { "block": "toolrows", "place": "top", "order": 1, "visible": 8, "tearOff": true, "icons": "set" },
+    { "block": "toolbar", "place": "none" },
+    { "block": "toolpalette", "place": "stage-left", "order": 0, "columns": 2, "sets": false, "basic": "rhino", "icons": "set" },
+    { "block": "palettes", "place": "right-panel", "upper": "properties", "lower": ["browser", "panel"] },
+    { "block": "viewports", "place": "none", "layout": "four" },
+    { "block": "viewtabs", "place": "view-top", "order": 0, "mode": "open" },
+    { "block": "statusbar", "place": "bottom", "order": 0, "command": true }
+  ]
+}

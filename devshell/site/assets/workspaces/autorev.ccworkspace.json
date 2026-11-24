@@ -1,0 +1,22 @@
+{
+  "format": "cadcraft-workspace",
+  "version": 1,
+  "id": "autorev",
+  "name": "AutoRev",
+  "nameKey": "shell.ws.autorev",
+  "hintKey": "shell.ws.autorev.hint",
+  "description": "Quick-access title bar, ribbon tabs with flat panels, an options bar, Properties above the Project Browser on the left, view tabs, a view control bar and a status bar: the arrangement people coming from other BIM programs already know.",
+  "author": "CadCraft",
+  "license": "Apache-2.0",
+  "look": { "density": "compact", "outline": "none", "tabs": "underline" },
+  "blocks": [
+    { "block": "titlebar", "place": "top", "order": 0, "quick": ["open", "save", "undo", "redo"], "inventory": true },
+    { "block": "ribbon", "place": "top", "order": 1, "file": ["open", "save"], "collapse": true, "tearOff": true },
+    { "block": "options", "place": "top", "order": 2 },
+    { "block": "toolbar", "place": "none" },
+    { "block": "palettes", "place": "left-panel", "upper": "properties", "lower": ["browser", "panel"] },
+    { "block": "viewtabs", "place": "view-top", "order": 0, "mode": "open" },
+    { "block": "viewbar", "place": "view-bottom", "order": 0, "slots": ["scale", "detail", "range", "fit"] },
+    { "block": "statusbar", "place": "bottom", "order": 0 }
+  ]
+}

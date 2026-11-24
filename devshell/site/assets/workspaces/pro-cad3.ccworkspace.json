@@ -1,0 +1,23 @@
+{
+  "format": "cadcraft-workspace",
+  "version": 1,
+  "id": "pro-cad3",
+  "name": "PRO-cad3 Review",
+  "nameKey": "shell.ws.procad3",
+  "hintKey": "shell.ws.procad3.hint",
+  "description": "The review desk of the markup and takeoff programs, in the Pro skin: a menu bar, two rows of tool icons, a panel with an icon rail on the left (pages and views, Properties, more), a tool chest with your own tools on the right, document tabs, a scale and zoom bar under the sheet, an edit palette by the pointer and a status bar. The same chrome, sizes and icon colour in every app.",
+  "author": "CadCraft",
+  "license": "Apache-2.0",
+  "look": { "density": "compact", "outline": "none", "tabs": "underline", "skin": "pro" },
+  "blocks": [
+    {"block": "menubar", "place": "top", "order": 0},
+    {"block": "toolrows", "place": "top", "order": 1, "visible": 9, "tearOff": true, "icons": "set"},
+    {"block": "toolbar", "place": "none"},
+    {"block": "palettes", "place": "left-panel", "upper": "browser", "lower": ["properties", "panel"], "rail": true},
+    {"block": "toolbox", "place": "stage-right", "order": 0, "collapse": true, "tearOff": true, "mine": true},
+    {"block": "viewtabs", "place": "view-top", "order": 0, "mode": "open"},
+    {"block": "quickbar", "place": "stage-bottom", "order": 0, "slots": ["scale", "fit", "layout", "units"]},
+    {"block": "petpalette", "place": "float"},
+    {"block": "statusbar", "place": "bottom", "order": 0}
+  ]
+}

@@ -53,7 +53,7 @@ function fixture(name, code, xyz, { tin = false } = {}) {
 const survey = (p) => p.points.map(({ x, y, z }) => [x, y, z]);
 const coord = (p, id = 'g1') => p.gisFeatures.get(id)[0].g.c;
 function snapshot(p) {
-  return structuredClone({ state: p.snapshot(), survey: p.points, tin: p.state.surface.tin, gis: p.gisFeatures,
+  return structuredClone({ state: p.snapshot(), survey: [...p.points], tin: p.state.surface.tin, gis: p.gisFeatures,
     version: p.version, undo: p.undoStack.length, file: p.pointsFile });
 }
 function assertXYZ(actual, expected) {

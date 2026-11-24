@@ -1,0 +1,22 @@
+{
+  "format": "cadcraft-workspace",
+  "version": 1,
+  "id": "pro-cad4",
+  "name": "PRO-cad4 Studio",
+  "nameKey": "shell.ws.procad4",
+  "hintKey": "shell.ws.procad4.hint",
+  "description": "The studio of the menu-and-palette modelling programs, in the Pro skin: a menu bar, one row of tool icons, a two-column tool palette on the left, an info bar for the running tool or the picked object, a tray on the right (Properties over the browser), document tabs and a command line in the status bar. The same chrome, sizes and icon colour in every app.",
+  "author": "CadCraft",
+  "license": "Apache-2.0",
+  "look": { "density": "compact", "outline": "none", "tabs": "underline", "skin": "pro" },
+  "blocks": [
+    {"block": "menubar", "place": "top", "order": 0},
+    {"block": "toolrows", "place": "top", "order": 1, "split": 12, "visible": 8, "tearOff": true, "icons": "set"},
+    {"block": "toolbar", "place": "none"},
+    {"block": "infobox", "place": "stage-top", "order": 0, "slots": ["level", "tool", "document"]},
+    {"block": "toolpalette", "place": "stage-left", "order": 0, "columns": 2, "sets": false, "icons": "set"},
+    {"block": "palettes", "place": "right-panel", "upper": "properties", "lower": ["browser", "panel"]},
+    {"block": "viewtabs", "place": "view-top", "order": 0, "mode": "open"},
+    {"block": "statusbar", "place": "bottom", "order": 0, "command": true}
+  ]
+}

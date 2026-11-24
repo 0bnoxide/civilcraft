@@ -572,13 +572,13 @@ export function install(host) {
           moveGis = reg.prepareGisMove?.(next);
           const fOld = frame(current), fNew = frame(next).from(current);
           const map = (x, y) => fNew(...fOld.toGrid(x, y));
-          p.editPoints(t('crs.d.undo.convert', { crs: next.name }), (pts, st) => {
-            res = reprojectProject(st, pts, map);
+          p.editPointTable(t('crs.d.undo.convert', { crs: next.name }), (ed, st) => {
+            res = reprojectProject(st, ed.table, map);
             if (res.refused) return null;
             st.crs = next;
             // Converted coordinates use the new system's foot.
             if (st.units === 'ft' && (next.unit === 'ft' || next.unit === 'ftUS')) st.foot = next.unit;
-            return res.points;
+            ed.setXY(res.xs, res.ys);
           });
         } catch (e) { err = e.message; }
         if (err || res?.refused) { problemBox.textContent = err || res.refused; problemBox.hidden = false; return; }
